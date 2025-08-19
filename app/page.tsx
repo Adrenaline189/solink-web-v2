@@ -1,7 +1,6 @@
 "use client";
 export const dynamic = 'force-dynamic';
 import { Suspense } from 'react';
-export const dynamic = 'force-dynamic';
 
 import Link from "next/link";
 import { useLang } from "@/lib/useLang";
