@@ -1,7 +1,6 @@
 "use client";
 export const dynamic = 'force-dynamic';
 import { Suspense } from 'react';
-export const dynamic = 'force-dynamic';
 
 import React, { useMemo, useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
