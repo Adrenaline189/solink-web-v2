@@ -1,18 +1,13 @@
-// app/ir/page.tsx
+// app/[locale]/ir/page.tsx
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
   title: "Investor Relations — Solink",
   description: "Highlights, deck, milestones, and investor FAQ.",
-  // Keep no-index while content is being finalized. Remove when ready to go public.
-  robots: { index: false, follow: false },
+  robots: { index: false, follow: false }, // keep noindex until ready
 };
 
-const UPDATED = new Date().toLocaleDateString("en-US", {
-  month: "short",
-  day: "numeric",
-  year: "numeric",
-});
+const UPDATED = new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 
 export default function IRPage() {
   return (
@@ -28,9 +23,7 @@ export default function IRPage() {
         <div className="mb-8">
           <div className="text-xs uppercase tracking-wider text-slate-400">Highlights</div>
           <h2 className="mt-1 text-2xl font-semibold tracking-tight">Key metrics (sample data)</h2>
-          <p className="mt-2 text-slate-300">
-            Replace these with live or periodically updated figures and specify the time range clearly.
-          </p>
+          <p className="mt-2 text-slate-300">Replace these with live or periodically updated figures and specify the time range clearly.</p>
         </div>
 
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -57,41 +50,23 @@ export default function IRPage() {
         </div>
       </section>
 
-      {/* Deck & One-pager */}
+      {/* Materials */}
       <section className="mt-16">
         <div className="mb-8">
           <div className="text-xs uppercase tracking-wider text-slate-400">Materials</div>
           <h2 className="mt-1 text-2xl font-semibold tracking-tight">Deck & One-pager</h2>
-          <p className="mt-2 text-slate-300">
-            Place files in <code className="text-slate-200">public/ir/</code> to keep links stable.
-          </p>
+          <p className="mt-2 text-slate-300">Place files in <code className="text-slate-200">public/ir/</code> to keep links stable.</p>
         </div>
-
         <div className="grid gap-4 sm:grid-cols-2">
-          <a
-            href="/ir/solink-deck.pdf"
-            className="block rounded-2xl border border-slate-800 bg-slate-900/40 p-5 hover:bg-slate-900/60"
-            target="_blank"
-            rel="noopener"
-          >
+          <a href="/ir/solink-deck.pdf" className="block rounded-2xl border border-slate-800 bg-slate-900/40 p-5 hover:bg-slate-900/60" target="_blank" rel="noopener">
             <div className="text-sm text-slate-400">Pitch Deck (PDF)</div>
             <div className="mt-1 text-lg font-medium text-white">Download Deck</div>
-            <div className="mt-2 text-xs text-slate-400">
-              Put your file at <code>public/ir/solink-deck.pdf</code>
-            </div>
+            <div className="mt-2 text-xs text-slate-400"><code>public/ir/solink-deck.pdf</code></div>
           </a>
-
-          <a
-            href="/ir/solink-onepager.pdf"
-            className="block rounded-2xl border border-slate-800 bg-slate-900/40 p-5 hover:bg-slate-900/60"
-            target="_blank"
-            rel="noopener"
-          >
+          <a href="/ir/solink-onepager.pdf" className="block rounded-2xl border border-slate-800 bg-slate-900/40 p-5 hover:bg-slate-900/60" target="_blank" rel="noopener">
             <div className="text-sm text-slate-400">One-pager (PDF)</div>
             <div className="mt-1 text-lg font-medium text-white">Download One-pager</div>
-            <div className="mt-2 text-xs text-slate-400">
-              Put your file at <code>public/ir/solink-onepager.pdf</code>
-            </div>
+            <div className="mt-2 text-xs text-slate-400"><code>public/ir/solink-onepager.pdf</code></div>
           </a>
         </div>
       </section>
@@ -101,11 +76,8 @@ export default function IRPage() {
         <div className="mb-8">
           <div className="text-xs uppercase tracking-wider text-slate-400">Timeline</div>
           <h2 className="mt-1 text-2xl font-semibold tracking-tight">Milestones</h2>
-          <p className="mt-2 text-slate-300">
-            A snapshot of progress that signals momentum and de-risking.
-          </p>
+          <p className="mt-2 text-slate-300">A snapshot of progress that signals momentum and de-risking.</p>
         </div>
-
         <ul className="space-y-3">
           <li className="rounded-2xl border border-slate-800 bg-slate-900/40 p-4">
             <div className="text-sm text-slate-400">Q1/2025</div>
@@ -128,48 +100,31 @@ export default function IRPage() {
           <div className="text-xs uppercase tracking-wider text-slate-400">FAQ</div>
           <h2 className="mt-1 text-2xl font-semibold tracking-tight">Frequently Asked Questions</h2>
         </div>
-
         <div className="space-y-3">
           <details className="group rounded-2xl border border-slate-800 bg-slate-900/40 p-4">
-            <summary className="cursor-pointer list-none text-white">
-              What is your revenue model?
-            </summary>
-            <div className="mt-2 text-slate-300">
-              Example: monthly subscription plus usage-based fees for advanced modules.
-            </div>
+            <summary className="cursor-pointer list-none text-white">What is your revenue model?</summary>
+            <div className="mt-2 text-slate-300">Example: monthly subscription plus usage-based fees for advanced modules.</div>
           </details>
           <details className="group rounded-2xl border border-slate-800 bg-slate-900/40 p-4">
-            <summary className="cursor-pointer list-none text-white">
-              How will you use the proceeds from this round?
-            </summary>
-            <div className="mt-2 text-slate-300">
-              Example: expand sales/support, accelerate 12–18 month roadmap, and complete security certifications.
-            </div>
+            <summary className="cursor-pointer list-none text-white">How will you use the proceeds from this round?</summary>
+            <div className="mt-2 text-slate-300">Example: expand sales/support, accelerate 12–18 month roadmap, and complete security certifications.</div>
           </details>
           <details className="group rounded-2xl border border-slate-800 bg-slate-900/40 p-4">
-            <summary className="cursor-pointer list-none text-white">
-              Key risks and mitigations?
-            </summary>
-            <div className="mt-2 text-slate-300">
-              Example: platform dependency, churn in segment X, PDPA/GDPR compliance—include concrete mitigation steps.
-            </div>
+            <summary className="cursor-pointer list-none text-white">Key risks and mitigations?</summary>
+            <div className="mt-2 text-slate-300">Example: platform dependency, churn in segment X, PDPA/GDPR compliance—include concrete mitigation steps.</div>
           </details>
         </div>
       </section>
 
-      {/* IR Contact */}
+      {/* Contact */}
       <section className="mt-16">
         <div className="mb-8">
           <div className="text-xs uppercase tracking-wider text-slate-400">Contact</div>
           <h2 className="mt-1 text-2xl font-semibold tracking-tight">Investor Relations Contact</h2>
         </div>
-
         <div className="rounded-2xl border border-slate-800 bg-slate-900/40 p-5">
           <div className="text-slate-300">
-            Email:{" "}
-            <a href="mailto:ir@yourdomain.com" className="text-cyan-400 hover:underline">
-              ir@yourdomain.com
-            </a>
+            Email: <a href="mailto:ir@yourdomain.com" className="text-cyan-400 hover:underline">ir@yourdomain.com</a>
           </div>
           <div className="mt-2 text-xs text-slate-400">
             Note: This page is <strong>no-index</strong> for now. Remove the robots restriction when ready.

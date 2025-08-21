@@ -1,12 +1,9 @@
+// app/sitemap.ts
 export default function sitemap() {
-  const base = 'https://YOURDOMAIN'; // แก้เป็นโดเมนจริง
-  const routes = [
-    '',           // /
-    'dashboard',  // /dashboard
-    // พร้อมเมื่อไหร่ค่อยทยอยเพิ่ม: 'product','solutions', ...
-  ];
+  const base = 'https://YOURDOMAIN';
+  const routes = ['', 'ir']; // add real pages when ready
   return routes.map((r) => ({
-    url: `${base}/${r}`,
+    url: `${base}/en/${r}`,
     changefreq: 'weekly',
     priority: r === '' ? 1.0 : 0.7,
   }));

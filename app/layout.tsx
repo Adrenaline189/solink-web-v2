@@ -3,9 +3,12 @@ export const dynamic = "force-dynamic";
 import "./globals.css";
 import type { Metadata } from "next";
 import Link from "next/link";
-import LanguageMenu from "@/components/LanguageMenu";
 import Image from "next/image";
-import logo from "@/public/solink-logo.png"; // ⬅️ เพิ่มบรรทัดนี้
+import LanguageMenu from "@/components/LanguageMenu";
+import MobileMenu from "@/components/MobileMenu";
+import MainNav from "@/components/MainNav";
+import { NAV_ITEMS } from "@/lib/nav";
+import logo from "@/public/solink-logo.png";
 
 export const metadata: Metadata = {
   title: "Solink",
@@ -24,32 +27,20 @@ export default function RootLayout({ children }: { children: React.ReactNode; })
           <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-3 overflow-visible">
             <div className="flex items-center gap-8 overflow-visible">
               <Link href="/" className="flex items-center gap-3">
-                <Image
-                  src={logo}           // ⬅️ ใช้ตัวแปร ไม่ใช่สตริง
-                  alt="Solink"
-                  width={32}
-                  height={32}
-                  className="h-8 w-8 rounded-lg object-contain"
-                  priority
-                />
+                <Image src={logo} alt="Solink" width={32} height={32} className="h-8 w-8 rounded-lg object-contain" priority />
                 <span className="text-lg font-semibold">Solink</span>
               </Link>
-
-              <nav className="hidden md:flex items-center gap-6 text-sm text-slate-300">
-                <Link href="/product"   className="hover:text-white transition-colors">Product</Link>
-                <Link href="/solutions" className="hover:text-white transition-colors">Solutions</Link>
-                <Link href="/pricing"   className="hover:text-white transition-colors">Pricing</Link>
-                <Link href="/customers" className="hover:text-white transition-colors">Customers</Link>
-                <Link href="/resources" className="hover:text-white transition-colors">Resources</Link>
-                <Link href="/company"   className="hover:text-white transition-colors">Company</Link>
-                <Link href="/ir"        className="hover:text-white transition-colors">IR</Link>
-                <Link href="/contact"   className="hover:text-white transition-colors">Contact / Demo</Link>
-              </nav>
+              {/* desktop nav with active state */}
+              <MainNav items={NAV_ITEMS} />
             </div>
 
-            <Suspense fallback={null}>
-              <LanguageMenu />
-            </Suspense>
+            <div className="flex items-center gap-2">
+              <Suspense fallback={null}>
+                <LanguageMenu />
+              </Suspense>
+              {/* mobile menu uses the same items */}
+              <MobileMenu items={NAV_ITEMS} />
+            </div>
           </div>
         </header>
 

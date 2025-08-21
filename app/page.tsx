@@ -3,7 +3,7 @@
 "use client";
 import { Suspense } from 'react';
 export const dynamic = 'force-dynamic';
-
+import BackToTop from '@/components/BackToTop';
 import Link from "next/link";
 import { useLang } from "@/lib/useLang";
 import { t } from "@/lib/i18n";
@@ -196,7 +196,7 @@ export default function LandingPage() {
           </form>
         </div>
       </section>
-
+<BackToTop />
       {/* FAQ */}
       <section className="mx-auto max-w-5xl px-6 py-16">
         <h2 className="text-center text-3xl font-bold">{t(lang, "landing.faqTitle")}</h2>

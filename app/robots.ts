@@ -5,15 +5,14 @@ export default function robots() {
       {
         userAgent: '*',
         allow: '/',
-        // กันหน้าเปล่าไว้ก่อน (ปรับรายการได้ตามจริง)
+        // Keep placeholders out of index until ready
         disallow: [
-          '/ir',
-          '/product','/solutions','/pricing','/customers',
-          '/resources','/company','/press','/security','/contact',
+          '/en/ir',
+          '/en/product','/en/solutions','/en/pricing','/en/customers',
+          '/en/resources','/en/company','/en/contact',
         ],
       },
     ],
-    // แก้เป็นโดเมนจริงเมื่อพร้อม
     sitemap: 'https://YOURDOMAIN/sitemap.xml',
   };
 }
