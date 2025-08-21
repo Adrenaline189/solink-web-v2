@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useLang } from '@/lib/useLang';
 import { ChevronDown } from 'lucide-react';
+import { usePathname, useRouter } from 'next/navigation';
 
 const labels: Record<string, string> = {
   en: 'English',
@@ -22,21 +23,22 @@ export default function LanguageMenu() {
   const rootRef = useRef<HTMLDivElement>(null);
   const btnRef = useRef<HTMLButtonElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
+const router = useRouter();
+const pathname = usePathname();
+
   const [activeIndex, setActiveIndex] = useState<number>(
     Math.max(0, codes.findIndex((c) => c === (lang as Code)))
   );
 
-  // sync activeIndex เมื่อภาษาเปลี่ยน
   useEffect(() => {
     setActiveIndex(Math.max(0, codes.findIndex((c) => c === (lang as Code))));
   }, [lang]);
 
-  // ปิดเมื่อคลิกนอก / กด Esc
+  // close on outside / Esc
   useEffect(() => {
-    const onPointerDown = (e: MouseEvent | PointerEvent) => {
-      if (!rootRef.current) return;
-      const target = e.target as Node | null;
-      if (target && rootRef.current.contains(target)) return;
+    const onPointerDown = (e: PointerEvent) => {
+      const t = e.target as Node | null;
+      if (rootRef.current?.contains(t as Node)) return;
       setOpen(false);
     };
     const onKey = (e: KeyboardEvent) => {
@@ -45,22 +47,20 @@ export default function LanguageMenu() {
         btnRef.current?.focus();
       }
     };
-    document.addEventListener('pointerdown', onPointerDown as any);
+    document.addEventListener('pointerdown', onPointerDown);
     document.addEventListener('keydown', onKey);
     return () => {
-      document.removeEventListener('pointerdown', onPointerDown as any);
+      document.removeEventListener('pointerdown', onPointerDown);
       document.removeEventListener('keydown', onKey);
     };
   }, []);
 
-  // โฟกัสรายการเมื่อเปิด
+  // focus list when opened
   useEffect(() => {
     if (!open) return;
     requestAnimationFrame(() => {
       listRef.current?.focus();
-      const el = listRef.current?.querySelector<HTMLButtonElement>(
-        `[data-index="${activeIndex}"]`
-      );
+      const el = listRef.current?.querySelector<HTMLButtonElement>(`[data-index="${activeIndex}"]`);
       el?.scrollIntoView({ block: 'nearest' });
     });
   }, [open, activeIndex]);
@@ -75,9 +75,13 @@ export default function LanguageMenu() {
     setActiveIndex((i) => (i + delta + codes.length) % codes.length);
   };
 
+  // --- ARIA values as explicit string literals ('true' | 'false') ---
+  const ariaExpanded: 'true' | 'false' = open ? 'true' : 'false';
+
   return (
     <div ref={rootRef} data-lang-menu-root="true" className="relative">
       <button
+        id="lang-trigger"
         ref={btnRef}
         onClick={() => setOpen((o) => !o)}
         onKeyDown={(e) => {
@@ -87,9 +91,9 @@ export default function LanguageMenu() {
           }
         }}
         className="flex items-center gap-2 rounded-2xl border border-slate-700 bg-slate-900/60 px-3 py-1.5 text-sm hover:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-500/60"
-        aria-expanded={open}
         aria-haspopup="listbox"
         aria-controls="lang-listbox"
+        aria-expanded={ariaExpanded}
       >
         <span className="opacity-80">Language:</span>
         <strong>{labels[lang] ?? 'English'}</strong>
@@ -102,43 +106,35 @@ export default function LanguageMenu() {
                     transition-[opacity,transform] duration-150 ease-out
                     ${open ? 'opacity-100 scale-y-100' : 'opacity-0 scale-y-0 pointer-events-none'}
                     motion-reduce:transition-none`}
-        style={{ transformOrigin: 'top' }}
       >
         <ul
           id="lang-listbox"
           ref={listRef}
           role="listbox"
+          aria-labelledby="lang-trigger"
           tabIndex={-1}
           aria-activedescendant={open ? `lang-opt-${activeIndex}` : undefined}
           className="p-2 outline-none max-h-64 overflow-auto"
           onKeyDown={(e) => {
-            if (e.key === 'ArrowDown') {
-              e.preventDefault();
-              moveActive(1);
-            } else if (e.key === 'ArrowUp') {
-              e.preventDefault();
-              moveActive(-1);
-            } else if (e.key === 'Home') {
-              e.preventDefault();
-              setActiveIndex(0);
-            } else if (e.key === 'End') {
-              e.preventDefault();
-              setActiveIndex(codes.length - 1);
-            } else if (e.key === 'Enter') {
-              e.preventDefault();
-              selectLang(codes[activeIndex] as Code);
-            } else if (e.key === 'Tab') {
-              setOpen(false);
-            }
+            if (e.key === 'ArrowDown') { e.preventDefault(); moveActive(1); }
+            else if (e.key === 'ArrowUp') { e.preventDefault(); moveActive(-1); }
+            else if (e.key === 'Home') { e.preventDefault(); setActiveIndex(0); }
+            else if (e.key === 'End') { e.preventDefault(); setActiveIndex(codes.length - 1); }
+            else if (e.key === 'Enter') { e.preventDefault(); selectLang(codes[activeIndex] as Code); }
+            else if (e.key === 'Tab') { setOpen(false); }
           }}
         >
           {codes.map((c, i) => {
             const isSelected = lang === c;
             const isActive = i === activeIndex;
+            const ariaSelected: 'true' | 'false' = isSelected ? 'true' : 'false';
             return (
-              <li key={c} role="option" aria-selected={isSelected} id={`lang-opt-${i}`}>
+              <li key={c} role="none">
                 <button
                   type="button"
+                  role="option"
+                  aria-selected={ariaSelected}
+                  id={`lang-opt-${i}`}
                   data-index={i}
                   onMouseEnter={() => setActiveIndex(i)}
                   onClick={() => selectLang(c)}
