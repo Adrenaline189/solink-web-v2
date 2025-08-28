@@ -1,0 +1,76 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ใช้ธีมมืดเป็นดีฟอลต์ (มีผลกับสกอร์บาร์/คอนโทรลบางชนิดด้วย) */
+:root {
+  color-scheme: dark;
+  --accent-start: #22d3ee; /* cyan-400 */
+  --accent-end:   #6366f1; /* indigo-500 */
+}
+
+/* กันวาบ และตั้งพื้นหลังมืดตั้งแต่เฟรมแรก */
+html, body { height: 100%; }
+body { @apply bg-slate-950 text-slate-100 antialiased; }
+
+/* ลิงก์ */
+a { @apply hover:opacity-85 transition; }
+
+/* ไฮไลต์เวลาลากเลือกข้อความ */
+::selection { @apply bg-sky-500/30 text-white; }
+
+/* สกอร์บาร์โทนมืด */
+* { scrollbar-width: thin; scrollbar-color: #334155 transparent; } /* Firefox */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background-color: #1f2937; /* slate-800 */
+  border-radius: 6px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover { background-color: #334155; /* slate-700 */ }
+
+/* โหมด OLED (layout จะสลับคลาส .theme-oled ที่ <html>) */
+.theme-oled body { background-color: #000; }
+
+/* ฟังก์ชันยูทิลิตี */
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@layer utilities {
+  /* ใส่กับ <main> หรือกล่องใหญ่ ๆ */
+  .fade-in { animation: fadeUp .35s ease-out both; }
+
+  /* การ์ดมีเงา/ยกนิด ๆ เวลาโฮเวอร์ */
+  .card-hover {
+    transition: transform .2s ease, box-shadow .2s ease;
+  }
+  .card-hover:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 24px rgba(0,0,0,.25);
+  }
+
+  /* กราเดียนต์ตามธีมของแบรนด์ */
+  .bg-grad-accent { background-image: linear-gradient(90deg, var(--accent-start), var(--accent-end)); }
+  .text-grad {
+    background-image: linear-gradient(90deg, var(--accent-start), var(--accent-end));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+}
+
+/* โฟกัสที่มองเห็นได้ (ช่วย a11y) */
+:focus-visible {
+  outline: 2px solid rgb(56 189 248 / .9); /* sky-400 */
+  outline-offset: 2px;
+}
+
+/* อ่านง่ายขึ้นเล็กน้อยสำหรับกราฟ Recharts */
+.recharts-cartesian-axis-tick-value { font-size: 10px; fill: #94a3b8; } /* slate-400 */
+.recharts-default-tooltip { font-size: 12px; }
+/* progress bar ที่อ่านค่าตัวแปร */
+.meter-bar { width: var(--meter-w, 0%); }
