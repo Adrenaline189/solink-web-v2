@@ -1,181 +1,134 @@
 // app/ir/page.tsx
 import type { Metadata } from "next";
+import Link from "next/link";
+import { Card, CardContent } from "../../components/ui/card";
+import { FileText, Newspaper, BarChart3, ShieldCheck } from "lucide-react";
 
 export const metadata: Metadata = {
   title: "Investor Relations — Solink",
-  description: "Highlights, deck, milestones, and investor FAQ.",
-  // Keep no-index while content is being finalized. Remove when ready to go public.
-  robots: { index: false, follow: false },
+  description: "Company overview, token economics, and key disclosures for investors."
 };
-
-const UPDATED = new Date().toLocaleDateString("en-US", {
-  month: "short",
-  day: "numeric",
-  year: "numeric",
-});
 
 export default function IRPage() {
   return (
-    <main className="mx-auto max-w-6xl px-6 py-12">
-      <h1 className="text-4xl font-semibold tracking-tight">Investor Relations</h1>
-      <p className="mt-3 text-slate-300">
-        A concise hub for investors: current highlights, downloadable materials, key milestones, and FAQs.
-      </p>
-      <div className="mt-2 text-xs text-slate-400">Last updated: {UPDATED}</div>
-
-      {/* Highlights */}
-      <section className="mt-12">
-        <div className="mb-8">
-          <div className="text-xs uppercase tracking-wider text-slate-400">Highlights</div>
-          <h2 className="mt-1 text-2xl font-semibold tracking-tight">Key metrics (sample data)</h2>
-          <p className="mt-2 text-slate-300">
-            Replace these with live or periodically updated figures and specify the time range clearly.
+    <main className="p-6 text-slate-100">
+      <div className="mx-auto max-w-6xl space-y-8">
+        <header className="space-y-2">
+          <h1 className="text-3xl font-semibold">Investor Relations</h1>
+          <p className="text-slate-400">
+            Key materials for investors and partners. For additional info, contact{" "}
+            <a href="mailto:ir@solink.network" className="text-sky-300 hover:underline">
+              ir@solink.network
+            </a>.
           </p>
-        </div>
+          <div className="flex gap-3">
+            <Link
+              href="/ir/news"
+              className="inline-flex items-center gap-2 rounded-2xl px-5 py-2 bg-slate-100 text-slate-900 hover:bg-white/90"
+            >
+              Latest news <Newspaper className="ml-1 h-4 w-4" />
+            </Link>
+            <Link
+              href="/contact"
+              className="inline-flex items-center gap-2 rounded-2xl px-5 py-2 border border-slate-700 bg-slate-900/40 text-slate-100 hover:bg-slate-800"
+            >
+              Contact IR
+            </Link>
+          </div>
+        </header>
 
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <div className="rounded-2xl border border-slate-800 bg-slate-900/40 p-5">
-            <div className="text-sm text-slate-400">Monthly Active Users</div>
-            <div className="mt-2 text-3xl font-bold tracking-tight text-white">12,400+</div>
-            <div className="mt-2 text-xs text-slate-400">Trailing 30 days</div>
-          </div>
-          <div className="rounded-2xl border border-slate-800 bg-slate-900/40 p-5">
-            <div className="text-sm text-slate-400">MRR</div>
-            <div className="mt-2 text-3xl font-bold tracking-tight text-white">$28,600</div>
-            <div className="mt-2 text-xs text-slate-400">+18% MoM</div>
-          </div>
-          <div className="rounded-2xl border border-slate-800 bg-slate-900/40 p-5">
-            <div className="text-sm text-slate-400">NRR</div>
-            <div className="mt-2 text-3xl font-bold tracking-tight text-white">122%</div>
-            <div className="mt-2 text-xs text-slate-400">6–12 month cohorts</div>
-          </div>
-          <div className="rounded-2xl border border-slate-800 bg-slate-900/40 p-5">
-            <div className="text-sm text-slate-400">Gross Margin</div>
-            <div className="mt-2 text-3xl font-bold tracking-tight text-white">78%</div>
-            <div className="mt-2 text-xs text-slate-400">Current quarter</div>
-          </div>
-        </div>
-      </section>
+        {/* Highlights */}
+        <section className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <Card>
+            <CardContent className="p-5">
+              <div className="flex items-center gap-2">
+                <BarChart3 className="h-5 w-5 text-cyan-300" />
+                <h3 className="text-lg font-semibold">Network growth</h3>
+              </div>
+              <p className="mt-2 text-sm text-slate-400">
+                Expanding node presence across regions for resiliency and lower latency.
+              </p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="p-5">
+              <div className="flex items-center gap-2">
+                <ShieldCheck className="h-5 w-5 text-emerald-300" />
+                <h3 className="text-lg font-semibold">Security-first</h3>
+              </div>
+              <p className="mt-2 text-sm text-slate-400">
+                Privacy-preserving architecture and rigorous review process.
+              </p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="p-5">
+              <div className="flex items-center gap-2">
+                <FileText className="h-5 w-5 text-indigo-300" />
+                <h3 className="text-lg font-semibold">Transparent metrics</h3>
+              </div>
+              <p className="mt-2 text-sm text-slate-400">
+                Quarterly reports with usage, rewards and treasury updates.
+              </p>
+            </CardContent>
+          </Card>
+        </section>
 
-      {/* Deck & One-pager */}
-      <section className="mt-16">
-        <div className="mb-8">
-          <div className="text-xs uppercase tracking-wider text-slate-400">Materials</div>
-          <h2 className="mt-1 text-2xl font-semibold tracking-tight">Deck & One-pager</h2>
-          <p className="mt-2 text-slate-300">
-            Place files in <code className="text-slate-200">public/ir/</code> to keep links stable.
+        {/* Key Documents */}
+        <section className="space-y-3">
+          <h2 className="text-2xl font-semibold">Key documents</h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <Card className="border-slate-800 bg-slate-900/40">
+              <CardContent className="p-5">
+                <h3 className="text-lg font-semibold">Whitepaper</h3>
+                <p className="mt-2 text-sm text-slate-400">
+                  Architecture, incentives, and protocol design.
+                </p>
+                <div className="mt-3">
+                  <a
+                    href="/docs/solink-whitepaper.pdf"
+                    className="inline-flex items-center gap-2 rounded-lg border border-slate-700 px-3 py-2 hover:bg-slate-800"
+                  >
+                    <FileText className="h-4 w-4" />
+                    Download PDF
+                  </a>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="border-slate-800 bg-slate-900/40">
+              <CardContent className="p-5">
+                <h3 className="text-lg font-semibold">Token economics</h3>
+                <p className="mt-2 text-sm text-slate-400">
+                  Distribution, emissions, and utility of SLK.
+                </p>
+                <div className="mt-3">
+                  <a
+                    href="/docs/solink-token-economics.pdf"
+                    className="inline-flex items-center gap-2 rounded-lg border border-slate-700 px-3 py-2 hover:bg-slate-800"
+                  >
+                    <FileText className="h-4 w-4" />
+                    Download PDF
+                  </a>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+          <p className="text-xs text-slate-500">
+            * Replace the links with real files in <code>/public/docs</code>.
           </p>
-        </div>
+        </section>
 
-        <div className="grid gap-4 sm:grid-cols-2">
-          <a
-            href="/ir/solink-deck.pdf"
-            className="block rounded-2xl border border-slate-800 bg-slate-900/40 p-5 hover:bg-slate-900/60"
-            target="_blank"
-            rel="noopener"
-          >
-            <div className="text-sm text-slate-400">Pitch Deck (PDF)</div>
-            <div className="mt-1 text-lg font-medium text-white">Download Deck</div>
-            <div className="mt-2 text-xs text-slate-400">
-              Put your file at <code>public/ir/solink-deck.pdf</code>
-            </div>
-          </a>
-
-          <a
-            href="/ir/solink-onepager.pdf"
-            className="block rounded-2xl border border-slate-800 bg-slate-900/40 p-5 hover:bg-slate-900/60"
-            target="_blank"
-            rel="noopener"
-          >
-            <div className="text-sm text-slate-400">One-pager (PDF)</div>
-            <div className="mt-1 text-lg font-medium text-white">Download One-pager</div>
-            <div className="mt-2 text-xs text-slate-400">
-              Put your file at <code>public/ir/solink-onepager.pdf</code>
-            </div>
-          </a>
-        </div>
-      </section>
-
-      {/* Milestones */}
-      <section className="mt-16">
-        <div className="mb-8">
-          <div className="text-xs uppercase tracking-wider text-slate-400">Timeline</div>
-          <h2 className="mt-1 text-2xl font-semibold tracking-tight">Milestones</h2>
-          <p className="mt-2 text-slate-300">
-            A snapshot of progress that signals momentum and de-risking.
-          </p>
-        </div>
-
-        <ul className="space-y-3">
-          <li className="rounded-2xl border border-slate-800 bg-slate-900/40 p-4">
-            <div className="text-sm text-slate-400">Q1/2025</div>
-            <div className="text-white">Beta launch with first 5 design partners</div>
-          </li>
-          <li className="rounded-2xl border border-slate-800 bg-slate-900/40 p-4">
-            <div className="text-sm text-slate-400">Q2/2025</div>
-            <div className="text-white">First enterprise customer signed (ARR $xx,xxx)</div>
-          </li>
-          <li className="rounded-2xl border border-slate-800 bg-slate-900/40 p-4">
-            <div className="text-sm text-slate-400">Q3/2025</div>
-            <div className="text-white">Launched ___ feature & completed internal security review</div>
-          </li>
-        </ul>
-      </section>
-
-      {/* FAQ */}
-      <section className="mt-16">
-        <div className="mb-8">
-          <div className="text-xs uppercase tracking-wider text-slate-400">FAQ</div>
-          <h2 className="mt-1 text-2xl font-semibold tracking-tight">Frequently Asked Questions</h2>
-        </div>
-
-        <div className="space-y-3">
-          <details className="group rounded-2xl border border-slate-800 bg-slate-900/40 p-4">
-            <summary className="cursor-pointer list-none text-white">
-              What is your revenue model?
-            </summary>
-            <div className="mt-2 text-slate-300">
-              Example: monthly subscription plus usage-based fees for advanced modules.
-            </div>
-          </details>
-          <details className="group rounded-2xl border border-slate-800 bg-slate-900/40 p-4">
-            <summary className="cursor-pointer list-none text-white">
-              How will you use the proceeds from this round?
-            </summary>
-            <div className="mt-2 text-slate-300">
-              Example: expand sales/support, accelerate 12–18 month roadmap, and complete security certifications.
-            </div>
-          </details>
-          <details className="group rounded-2xl border border-slate-800 bg-slate-900/40 p-4">
-            <summary className="cursor-pointer list-none text-white">
-              Key risks and mitigations?
-            </summary>
-            <div className="mt-2 text-slate-300">
-              Example: platform dependency, churn in segment X, PDPA/GDPR compliance—include concrete mitigation steps.
-            </div>
-          </details>
-        </div>
-      </section>
-
-      {/* IR Contact */}
-      <section className="mt-16">
-        <div className="mb-8">
-          <div className="text-xs uppercase tracking-wider text-slate-400">Contact</div>
-          <h2 className="mt-1 text-2xl font-semibold tracking-tight">Investor Relations Contact</h2>
-        </div>
-
-        <div className="rounded-2xl border border-slate-800 bg-slate-900/40 p-5">
-          <div className="text-slate-300">
-            Email:{" "}
-            <a href="mailto:ir@yourdomain.com" className="text-cyan-400 hover:underline">
-              ir@yourdomain.com
-            </a>
-          </div>
-          <div className="mt-2 text-xs text-slate-400">
-            Note: This page is <strong>no-index</strong> for now. Remove the robots restriction when ready.
-          </div>
-        </div>
-      </section>
+        {/* Governance / Notes */}
+        <section className="space-y-3">
+          <h2 className="text-2xl font-semibold">Governance & disclosures</h2>
+          <ul className="list-disc pl-5 text-sm text-slate-300 space-y-1">
+            <li>Quarterly updates posted on the IR News page.</li>
+            <li>Bug bounty program and security reports are published regularly.</li>
+            <li>Community proposals posted in the public forum.</li>
+          </ul>
+        </section>
+      </div>
     </main>
   );
 }

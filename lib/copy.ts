@@ -1,0 +1,81 @@
+// lib/copy.ts
+export const COPY = {
+  brand: 'Solink',
+  tagline: 'Share bandwidth. Earn rewards.',
+
+  nav: {
+    home: 'Home',
+    product: 'Product',
+    solutions: 'Solutions',
+    pricing: 'Pricing',
+    resources: 'Resources',
+    dashboard: 'Dashboard',
+  },
+
+  dashboard: {
+    title: 'Solink Dashboard',
+    subtitle: 'Demo view — not connected to a database yet.',
+    actions: {
+      connectWallet: 'Connect Wallet',
+      startSharing: 'Start Sharing Bandwidth',
+      details: 'Details',
+      retry: 'Retry',
+      copy: 'Copy',
+      copied: 'Copied!',
+      share: 'Share',
+    },
+    kpi: {
+      pointsToday: 'Points Today',
+      totalPoints: 'Total Points',
+      uptimeToday: 'Uptime Today',
+      avgBandwidth: 'Average Bandwidth',
+      dailyCapPrefix: 'from daily cap',
+      last15m: 'Last 15 minutes',
+      goalPrefix: 'Goal: ≥',
+    },
+    charts: {
+      hourlyPoints: 'Hourly Points',
+      tzUTC: 'UTC',
+    },
+    panel: {
+      qfTrust: 'Quality Factor & Trust Score',
+      qfNote: 'Note: QF considers p50 latency, jitter, and session stability.',
+    },
+    filters: {
+      range: 'Range',
+      today: 'Today',
+      d7: '7d',
+      d30: '30d',
+      tz: 'TZ',
+    },
+    referral: {
+      title: 'Referral Program',
+      subtitle: 'Invite friends to join and earn bonus points.',
+      yourLink: 'Your link',
+      placeholder: 'https://solink.network/r/...',
+      howItWorks: 'How it works',
+      rule1: 'Share your link.',
+      rule2: 'Earn when they participate.',
+      stats: 'Stats',
+      invites: 'Invites',
+      accepted: 'Accepted',
+      pointsFromRef: 'Points from referrals',
+    },
+    table: {
+      recentTx: 'Recent Transactions',
+      time: 'Time',
+      type: 'Type',
+      amount: 'Amount',
+      note: 'Note',
+    },
+    status: {
+      title: 'Node Status',
+      node: 'Node',
+      region: 'Region',
+      ip: 'IP',
+      version: 'Version',
+      connectedDot: '● Connected',
+    },
+    footerDemo: 'Demo build — data is mocked.',
+  },
+} as const;

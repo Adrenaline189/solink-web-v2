@@ -1,18 +1,18 @@
 // app/robots.ts
-export default function robots() {
+import type { MetadataRoute } from "next";
+
+export default function robots(): MetadataRoute.Robots {
+  const base =
+    process.env.NEXT_PUBLIC_SITE_URL ??
+    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000");
+
   return {
-    rules: [
-      {
-        userAgent: '*',
-        allow: '/',
-        // Keep placeholders out of index until ready
-        disallow: [
-          '/en/ir',
-          '/en/product','/en/solutions','/en/pricing','/en/customers',
-          '/en/resources','/en/company','/en/contact',
-        ],
-      },
-    ],
-    sitemap: 'https://YOURDOMAIN/sitemap.xml',
+    rules: {
+      userAgent: "*",
+      allow: ["/"],
+      disallow: ["/api/"],
+    },
+    sitemap: `${base}/sitemap.xml`,
+    host: base,
   };
 }

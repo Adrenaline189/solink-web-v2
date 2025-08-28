@@ -1,12 +1,15 @@
-export type NavItem = { label: string; href: string };
+// lib/nav.ts
+export type NavItem = { key: string; label: string; href: `/${string}` };
 
-export const NAV_ITEMS: NavItem[] = [
-  { label: 'Product',   href: '/product' },
-  { label: 'Solutions', href: '/solutions' },
-  { label: 'Pricing',   href: '/pricing' },
-  { label: 'Customers', href: '/customers' },
-  { label: 'Resources', href: '/resources' },
-  { label: 'Company',   href: '/company' },
-  { label: 'IR',        href: '/ir' },
-  { label: 'Contact / Demo', href: '/contact' },
-];
+export const NAV_ITEMS = [
+  { key: "home",      label: "Home",      href: "/" },
+  { key: "product",   label: "Product",   href: "/product" },
+  { key: "solutions", label: "Solutions", href: "/solutions" },
+  { key: "pricing",   label: "Pricing",   href: "/pricing" },
+  { key: "customers", label: "Customers", href: "/customers" },
+  { key: "resources", label: "Resources", href: "/resources" },
+  { key: "ir",        label: "IR",        href: "/ir" },
+  { key: "contact",   label: "Contact",   href: "/contact" },
+  { key: "dashboard", label: "Dashboard", href: "/dashboard" },
+  { key: "settings",  label: "Settings",  href: "/settings" },
+] as const satisfies ReadonlyArray<NavItem>;

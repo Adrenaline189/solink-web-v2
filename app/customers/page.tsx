@@ -1,10 +1,11 @@
+// app/customers/page.tsx
 import type { Metadata } from "next";
 import SectionTitle from "@/components/SectionTitle";
 
 export const metadata: Metadata = {
   title: "Customers — Solink",
   description: "Customer stories and references.",
-  robots: { index: false, follow: false },
+  robots: { index: true, follow: true },
 };
 
 const LOGOS = Array.from({ length: 12 }).map((_, i) => `Logo ${i + 1}`);
@@ -14,7 +15,9 @@ export default function CustomersPage() {
     <main className="mx-auto max-w-6xl px-6 py-16">
       <header>
         <h1 className="text-4xl font-semibold tracking-tight">Customers</h1>
-        <p className="mt-4 max-w-2xl text-slate-300">Trusted by teams building for performance, scale, and compliance.</p>
+        <p className="mt-4 max-w-2xl text-slate-300">
+          Trusted by teams building for performance, scale, and compliance.
+        </p>
       </header>
 
       <section className="mt-12">

@@ -1,3 +1,4 @@
+// app/product/page.tsx
 import type { Metadata } from "next";
 import Link from "next/link";
 import SectionTitle from "@/components/SectionTitle";
@@ -6,10 +7,14 @@ import { Shield, Zap, Globe2, BarChart3 } from "lucide-react";
 export const metadata: Metadata = {
   title: "Product — Solink",
   description: "Product overview and core capabilities.",
-  robots: { index: false, follow: false },
+  robots: { index: true, follow: true },
 };
 
-const UPDATED = new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+const UPDATED = new Date().toLocaleDateString("en-US", {
+  month: "short",
+  day: "numeric",
+  year: "numeric",
+});
 
 const FEATURES = [
   {
@@ -34,9 +39,7 @@ const FEATURES = [
   },
 ];
 
-export default function ProductPage({ params }: { params: { locale: string } }) {
-  const { locale } = params;
-
+export default function ProductPage() {
   return (
     <main className="mx-auto max-w-6xl px-6 py-16">
       <header className="text-center">
@@ -86,7 +89,7 @@ export default function ProductPage({ params }: { params: { locale: string } }) 
         <p className="mt-2 text-slate-300">Request a guided demo or start a pilot tailored to your needs.</p>
         <div className="mt-4">
           <Link
-            href={`/${locale}/contact`}
+            href="/contact"
             className="inline-block rounded-xl bg-white/10 px-4 py-2 text-sm text-white hover:bg-white/20"
           >
             Request a demo

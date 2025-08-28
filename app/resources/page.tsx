@@ -1,41 +1,72 @@
+// app/resources/page.tsx
 import type { Metadata } from "next";
+import Link from "next/link";
 import SectionTitle from "@/components/SectionTitle";
 
 export const metadata: Metadata = {
   title: "Resources — Solink",
-  description: "Docs, guides, and downloads.",
-  robots: { index: false, follow: false },
+  description: "Docs, changelog, and updates.",
+  robots: { index: true, follow: true },
 };
 
-const RESOURCES = [
-  { type: "Docs", title: "Getting Started", href: "#" },
-  { type: "Guide", title: "Routing Policies 101", href: "#" },
-  { type: "Guide", title: "Observability & Alerts", href: "#" },
-  { type: "SDK", title: "Node.js Client", href: "#" },
-  { type: "Whitepaper", title: "Incentive Model Overview", href: "#" },
-  { type: "Checklist", title: "Security Review Prep", href: "#" },
+const CARDS = [
+  {
+    title: "Quickstart",
+    desc: "Install the node and start sharing bandwidth in minutes.",
+    href: "/resources/quickstart",
+  },
+  {
+    title: "SDK Guide",
+    desc: "Integrate Solink features into your app or workflow.",
+    href: "/resources/sdk",
+  },
+  {
+    title: "Security",
+    desc: "Practices, audits, and how we protect the network.",
+    href: "/resources/security",
+  },
+  {
+    title: "Changelog",
+    desc: "What’s new in the product, week by week.",
+    href: "/resources/changelog",
+  },
+  {
+    title: "FAQ",
+    desc: "Common questions about rewards, nodes, and privacy.",
+    href: "/resources/faq",
+  },
+  {
+    title: "API Reference",
+    desc: "HTTP endpoints, schemas, and examples.",
+    href: "/resources/api",
+  },
 ];
 
 export default function ResourcesPage() {
   return (
-    <main className="mx-auto max-w-6xl px-6 py-16">
-      <header>
+    <main className="mx-auto max-w-6xl px-6 py-16" translate="no">
+      <header className="text-center">
         <h1 className="text-4xl font-semibold tracking-tight">Resources</h1>
-        <p className="mt-4 max-w-2xl text-slate-300">Documentation, guides, SDKs, and whitepapers—centralized in one place.</p>
+        <p className="mx-auto mt-4 max-w-2xl text-slate-300">
+          Documentation, examples, and updates to help you ship with Solink.
+        </p>
       </header>
 
       <section className="mt-12">
-        <SectionTitle title="Library" />
-        <div className="grid gap-4 md:grid-cols-3">
-          {RESOURCES.map((r) => (
-            <a
-              key={r.title}
-              href={r.href}
-              className="block rounded-2xl border border-slate-800 bg-slate-900/40 p-5 hover:bg-slate-900/60"
+        <SectionTitle title="Documentation" subtitle="Start here or jump to what you need." />
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {CARDS.map((c) => (
+            <Link
+              key={c.title}
+              href={c.href as any}
+              className="group rounded-2xl border border-slate-800 bg-slate-900/40 p-5 transition-colors hover:bg-slate-900/60"
             >
-              <div className="text-xs uppercase tracking-wider text-slate-400">{r.type}</div>
-              <div className="mt-1 text-lg font-medium text-white">{r.title}</div>
-            </a>
+              <div className="text-white font-medium">{c.title}</div>
+              <p className="mt-2 text-sm text-slate-300">{c.desc}</p>
+              <div className="mt-3 text-xs text-sky-400 group-hover:text-sky-300">
+                Read more →
+              </div>
+            </Link>
           ))}
         </div>
       </section>

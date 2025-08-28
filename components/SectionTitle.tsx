@@ -1,19 +1,21 @@
+// components/SectionTitle.tsx
+import React from "react";
+
 export default function SectionTitle({
-  eyebrow,
   title,
   subtitle,
+  className = "",
 }: {
-  eyebrow?: string;
   title: string;
   subtitle?: string;
+  className?: string;
 }) {
   return (
-    <div className="mb-8">
-      {eyebrow ? (
-        <div className="text-xs uppercase tracking-wider text-slate-400">{eyebrow}</div>
+    <div className={`mb-4 ${className}`}>
+      <h2 className="text-xl font-semibold tracking-tight">{title}</h2>
+      {subtitle ? (
+        <p className="mt-1 text-slate-400 text-sm">{subtitle}</p>
       ) : null}
-      <h2 className="mt-1 text-2xl font-semibold tracking-tight">{title}</h2>
-      {subtitle ? <p className="mt-2 text-slate-300">{subtitle}</p> : null}
     </div>
   );
 }

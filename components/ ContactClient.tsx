@@ -31,9 +31,7 @@ export default function ContactClient({ locale }: { locale: string }) {
             </div>
             <div>
               <label className="text-sm text-slate-300">Company</label>
-              <input
-                className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100"
-              />
+              <input className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100" />
             </div>
           </div>
 
@@ -48,9 +46,7 @@ export default function ContactClient({ locale }: { locale: string }) {
             </div>
             <div>
               <label className="text-sm text-slate-300">Phone (optional)</label>
-              <input
-                className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100"
-              />
+              <input className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100" />
             </div>
           </div>
 

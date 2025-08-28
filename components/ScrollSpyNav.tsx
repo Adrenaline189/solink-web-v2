@@ -10,15 +10,14 @@ export default function ScrollSpyNav({ items }: { items: Item[] }) {
   useEffect(() => {
     const obs = new IntersectionObserver(
       (entries) => {
-        // เลือก section ที่โผล่มากที่สุดใกล้จุดกึ่งกลางจอ
         const visible = entries
-          .filter(e => e.isIntersecting)
+          .filter((e) => e.isIntersecting)
           .sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
         if (visible?.target?.id) setActive(visible.target.id);
       },
       { rootMargin: '-40% 0px -50% 0px', threshold: [0.2, 0.4, 0.6, 0.8] }
     );
-    items.forEach(it => {
+    items.forEach((it) => {
       const el = document.getElementById(it.id);
       if (el) obs.observe(el);
     });
@@ -33,10 +32,16 @@ export default function ScrollSpyNav({ items }: { items: Item[] }) {
 
   return (
     <div className="sticky top-12 z-30 border-b border-slate-800 bg-slate-950/70 backdrop-blur">
-      <nav className="mx-auto flex max-w-7xl items-center gap-4 overflow-x-auto px-6 py-2 text-sm
-                      [-ms-overflow-style:none] [scrollbar-width:none]">
-        <style jsx>{`nav::-webkit-scrollbar { display: none; }`}</style>
-        {items.map(it => {
+      <nav
+        className="mx-auto flex max-w-7xl items-center gap-4 overflow-x-auto px-6 py-2 text-sm
+                      [-ms-overflow-style:none] [scrollbar-width:none]"
+      >
+        <style jsx>{`
+          nav::-webkit-scrollbar {
+            display: none;
+          }
+        `}</style>
+        {items.map((it) => {
           const isActive = active === it.id;
           return (
             <Link

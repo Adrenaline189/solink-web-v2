@@ -1,19 +1,24 @@
+// app/solutions/page.tsx
 import type { Metadata } from "next";
 import SectionTitle from "@/components/SectionTitle";
 
 export const metadata: Metadata = {
   title: "Solutions — Solink",
   description: "Use cases and industry solutions.",
-  robots: { index: false, follow: false },
+  robots: { index: true, follow: true },
 };
 
-const UPDATED = new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+const UPDATED = new Date().toLocaleDateString("en-US", {
+  month: "short",
+  day: "numeric",
+  year: "numeric",
+});
 
 const SOLUTIONS = [
   {
     name: "Consumer Apps",
     problem: "Unpredictable traffic spikes and costly over-provisioning.",
-    solution: "Burst capacity via distributed peers with policy-guardrails and analytics.",
+    solution: "Burst capacity via distributed peers with policy guardrails and analytics.",
     outcome: "Lower infra cost while keeping latency under control.",
   },
   {
