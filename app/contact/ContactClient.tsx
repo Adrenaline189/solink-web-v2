@@ -97,8 +97,15 @@ export default function ContactClient() {
 
               {/* honeypot (ซ่อนจากผู้ใช้จริง) */}
               <div className="hidden">
-                <label>Website</label>
-                <input value={website} onChange={(e) => setWebsite(e.target.value)} />
+                <label htmlFor="website" className="sr-only">Website</label>
+                <input
+                  id="website"
+                  name="website"
+                  value={website}
+                  onChange={(e) => setWebsite(e.target.value)}
+                  aria-hidden="true"
+                  tabIndex={-1}
+                />
               </div>
 
               {state === "error" && err && (

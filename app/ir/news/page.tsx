@@ -1,6 +1,5 @@
-// app/ir/news/page.tsx
 import type { Metadata } from "next";
-import Link from "next/link";
+import NewsLink from "@/components/NewsLink";
 
 export const metadata: Metadata = {
   title: "IR — News",
@@ -10,11 +9,10 @@ export const metadata: Metadata = {
 type NewsItem = {
   slug: string;
   title: string;
-  date: string;     // ISO หรือรูปแบบที่คุณใช้แสดงผล
+  date: string;
   summary: string;
 };
 
-// TODO: เปลี่ยนเป็นดึงจากแหล่งจริงภายหลัง
 const NEWS: NewsItem[] = [
   {
     slug: "q2-2025-update",
@@ -34,9 +32,7 @@ export default function IRNewsPage() {
   return (
     <div className="mx-auto max-w-5xl p-6">
       <h1 className="text-3xl font-bold tracking-tight">Investor Relations — News</h1>
-      <p className="text-slate-400 mt-2">
-        Official updates and announcements for investors.
-      </p>
+      <p className="text-slate-400 mt-2">Official updates and announcements for investors.</p>
 
       <div className="mt-6 grid gap-4">
         {NEWS.map((n) => (
@@ -45,13 +41,12 @@ export default function IRNewsPage() {
             <p className="text-slate-500 text-sm mt-1">{n.date}</p>
             <p className="text-slate-300 text-sm mt-2">{n.summary}</p>
 
-            {/* ✅ ใช้ UrlObject ให้ผ่าน typedRoutes โดยไม่ต้อง cast */}
-            <Link
-              href={{ pathname: "/ir/news/[slug]", query: { slug: n.slug } }}
+            <NewsLink
+              slug={n.slug}
               className="inline-block mt-3 rounded-lg border border-slate-700 px-3 py-2 hover:bg-slate-800 text-sm"
             >
               Read more
-            </Link>
+            </NewsLink>
           </article>
         ))}
       </div>
