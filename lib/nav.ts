@@ -6,7 +6,7 @@ export const NAV_ITEMS = [
   { key: "product",   label: "Product",   href: "/product" },
   { key: "solutions", label: "Solutions", href: "/solutions" },
   { key: "pricing",   label: "Pricing",   href: "/pricing" },
-  { key: "customers", label: "Customers", href: "/customers" },
+  { key: "tokenomics", label: "Tokenomics", href: "/tokenomics" },
   { key: "resources", label: "Resources", href: "/resources" },
   { key: "ir",        label: "IR",        href: "/ir" },
   { key: "contact",   label: "Contact",   href: "/contact" },
