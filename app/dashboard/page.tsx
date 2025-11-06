@@ -6,7 +6,7 @@ export const dynamic = "force-dynamic";
 
 import { Card, CardContent } from "../../components/ui/card";
 import { Button } from "../../components/ui/button";
-import { Wallet, Link2, Gauge, Award, Activity, Cloud, TrendingUp } from "lucide-react";
+import { Link2, Gauge, Award, Activity, Cloud, TrendingUp } from "lucide-react";
 
 import type { DashboardSummary, HourlyPoint, Tx } from "../../types/dashboard";
 import {
@@ -22,11 +22,17 @@ import { useWallet } from "../../lib/useWallet";
 import { buildReferralLink, getUserCode } from "../../lib/referral";
 import { usePrefs } from "../../lib/prefs-client";
 
+// ⬇️ ดึงสถิติ referral จริงจาก /api/referral
+import type { ReferralStats } from "../../lib/data/referral";
+import { fetchReferralStats } from "../../lib/data/referral";
+
 /* ---------------------------------- page ----------------------------------- */
 function DashboardInner() {
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
   const [hourly, setHourly] = useState<HourlyPoint[]>([]);
   const [txData, setTxData] = useState<Tx[]>([]);
+  const [refStats, setRefStats] = useState<ReferralStats | null>(null);
+
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
 
@@ -37,6 +43,15 @@ function DashboardInner() {
   const { address } = useWallet();
   const [refLink, setRefLink] = useState("");
   const [copied, setCopied] = useState(false);
+
+  // (optional) เก็บจำนวนครั้งที่ผู้ใช้กดส่งคำเชิญไว้ใน localStorage เพื่อโชว์ "Invites sent"
+  const [invitesSent, setInvitesSent] = useState<number | null>(null);
+  useEffect(() => {
+    try {
+      const v = localStorage.getItem("solink_invites_sent");
+      if (v != null) setInvitesSent(Number(v) || 0);
+    } catch {}
+  }, []);
 
   // เตรียม referral link
   useEffect(() => {
@@ -50,14 +65,16 @@ function DashboardInner() {
     (async () => {
       try {
         setLoading(true);
-        const [s, h, t] = await Promise.all([
+        const [s, h, t, rs] = await Promise.all([
           fetchDashboardSummary(ac.signal),
           fetchHourly(range, ac.signal),
           fetchTransactions(range, ac.signal),
+          fetchReferralStats(ac.signal), // <= เพิ่ม referral stats
         ]);
         setSummary(s ?? null);
         setHourly(Array.isArray(h) ? h : []);
         setTxData(Array.isArray(t) ? t : []);
+        setRefStats(rs ?? { bonusTotal: 0, referredCount: 0 });
         setErr(null);
       } catch (e: any) {
         setErr(e?.message || "Failed to load");
@@ -198,10 +215,34 @@ function DashboardInner() {
                   <Button onClick={copy} className="rounded-xl px-4" title="Copy referral link">
                     {copied ? "Copied!" : "Copy"}
                   </Button>
-                  <Button variant="secondary" className="rounded-xl" title="Share referral link">
+                  <Button
+                    variant="secondary"
+                    className="rounded-xl"
+                    title="Share referral link"
+                    onClick={() => {
+                      try {
+                        const n = (invitesSent ?? 0) + 1;
+                        localStorage.setItem("solink_invites_sent", String(n));
+                        setInvitesSent(n);
+                        if (navigator.share) {
+                          navigator.share({ url: refLink, title: "Join Solink", text: "Share bandwidth. Earn rewards." }).catch(() => {});
+                        }
+                      } catch {}
+                    }}
+                  >
                     Share
                   </Button>
                 </div>
+              </div>
+
+              <h4 className="text-sm font-semibold mt-5 mb-2">Referral stats</h4>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <Stat label="Invites sent" value={invitesSent != null ? String(invitesSent) : "—"} />
+                <Stat label="Accepted" value={refStats ? String(refStats.referredCount) : (loading ? "—" : "0")} />
+                <Stat
+                  label="Points from referrals"
+                  value={refStats ? `+${refStats.bonusTotal}` : (loading ? "—" : "0")}
+                />
               </div>
 
               <h4 className="text-sm font-semibold mt-5 mb-1">How it works</h4>
@@ -209,13 +250,6 @@ function DashboardInner() {
                 <li>You earn bonus points when your friend signs up and starts sharing.</li>
                 <li>Higher quality/uptime increases your referral multiplier.</li>
               </ul>
-
-              <h4 className="text-sm font-semibold mt-5 mb-2">Referral stats</h4>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <Stat label="Invites sent" value="8" />
-                <Stat label="Accepted" value="5" />
-                <Stat label="Points from referrals" value="+420" />
-              </div>
             </CardContent>
           </Card>
 
