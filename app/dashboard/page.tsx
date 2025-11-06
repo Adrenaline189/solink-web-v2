@@ -92,7 +92,7 @@ function DashboardInner() {
           <div>
             <h1 className="text-3xl font-bold tracking-tight">Solink Dashboard</h1>
             <p className="text-slate-400">
-              {loading ? "Loading data…" : "Demo view — wired to API routes."}
+              {loading ? "Loading data…" : "Wired to API routes."}
             </p>
             {err && <p className="text-rose-400 text-sm mt-1">Error: {err}</p>}
           </div>
