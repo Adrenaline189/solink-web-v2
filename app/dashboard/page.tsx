@@ -307,7 +307,7 @@ function DashboardInner() {
         </Card>
 
         <footer className="text-xs text-slate-500 mt-8">
-          © {new Date().getFullYear()} Solink • Demo build — data via API routes.
+          © {new Date().getFullYear()} Solink • data via API routes.
         </footer>
       </div>
     </div>
