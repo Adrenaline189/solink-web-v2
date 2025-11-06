@@ -1,23 +1,23 @@
 // lib/env.ts
-// อ่านค่า API_BASE แบบปลอดภัยบน client (ไม่มีการแตะ process ตรง ๆ)
-export const API_BASE: string = (() => {
-  // inline จาก NEXT_PUBLIC_* ตอน build (ถ้ามี)
-  const fromBuild =
-    typeof process !== "undefined" && (process as any).env?.NEXT_PUBLIC_API_BASE
-      ? (process as any).env.NEXT_PUBLIC_API_BASE
-      : undefined;
+const readRuntimeVar = (key: string): string | undefined => {
+  // 1) window runtime (ถ้าอยากตั้งจาก <script> ใส่ลง window)
+  if (typeof window !== "undefined" && (window as any)[key]) {
+    return String((window as any)[key]);
+  }
+  // 2) Next public env (SSR/Edge เท่านั้น)
+  if (typeof process !== "undefined") {
+    const v = (process as any).env?.[key];
+    if (v) return String(v);
+  }
+  return undefined;
+};
 
-  // runtime override ผ่าน window.__ENV (ถ้าอยากเซ็ตจาก <script> ฝั่ง client)
-  const fromWindow =
-    typeof window !== "undefined" && (window as any).__ENV?.NEXT_PUBLIC_API_BASE
-      ? (window as any).__ENV.NEXT_PUBLIC_API_BASE
-      : undefined;
+const FALLBACK_API = "https://api-solink.network";
 
-  // สำรองเผื่อรันฝั่ง server เท่านั้น
-  const fromServer =
-    typeof process !== "undefined" && (process as any).env?.API_BASE
-      ? (process as any).env.API_BASE
-      : undefined;
-
-  return fromBuild || fromWindow || fromServer || "https://api-solink.network";
-})();
+// ระวัง: client ห้ามอ้าง process ตรง ๆ ตอน import/time
+export const API_BASE =
+  readRuntimeVar("NEXT_PUBLIC_API_BASE") ||
+  // ถ้าเรียกจากเบราว์เซอร์ ให้ใช้ origin + /api เป็น proxy ทันที
+  (typeof window !== "undefined"
+    ? `${window.location.origin}`
+    : FALLBACK_API);
