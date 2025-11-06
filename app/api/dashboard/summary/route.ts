@@ -1,20 +1,82 @@
 // app/api/dashboard/summary/route.ts
 import { NextResponse } from "next/server";
-import { getSummary, ensureSim } from "@/lib/dev-sim";
+import { API_BASE } from "@/lib/env";
 
-export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function GET(req: Request) {
-  const cookieHdr = req.headers.get("cookie") || "";
-  const sim = /(?:^|;\s*)solink_sim=1(?:;|$)/.test(cookieHdr);
+export async function GET() {
+  try {
+    // ตัวอย่าง: ลองดึง balance จริง (ถ้าตั้ง proxy ไว้ที่ /api/* จะชี้มายัง backend ของคุณ)
+    const r = await fetch(`${API_BASE}/api/points/balance`, {
+      headers: { "Content-Type": "application/json" },
+      // ถ้ามี cookie ไว้ auth ให้ส่งไปด้วย
+      credentials: "include",
+      cache: "no-store",
+    });
 
-  if (sim) {
-    ensureSim(); // init ถ้ายังไม่เคย
-    return NextResponse.json({ ok: true, summary: getSummary() }, { headers: { "Cache-Control": "no-store" } });
+    // ถ้าต่อ backend ไม่ได้ก็ใช้ demo
+    if (!r.ok) {
+      return NextResponse.json(
+        {
+          ok: true,
+          summary: {
+            pointsToday: 320,
+            totalPoints: 12450,
+            slk: 12.45,
+            uptimeHours: 6,
+            goalHours: 8,
+            avgBandwidthMbps: 2.1,
+            qf: 82,
+            trust: 74,
+            region: "SG1",
+            ip: "203.0.113.42",
+            version: "v0.4.2",
+          },
+        },
+        { status: 200 }
+      );
+    }
+
+    const json = (await r.json()) as { ok: boolean; balance?: number };
+    const totalPoints = Number(json?.balance ?? 12450);
+    return NextResponse.json(
+      {
+        ok: true,
+        summary: {
+          pointsToday: 320,           // TODO: ใส่ค่าจริงถ้ามี endpoint hours/today
+          totalPoints,
+          slk: +(totalPoints / 1000).toFixed(2),
+          uptimeHours: 6,
+          goalHours: 8,
+          avgBandwidthMbps: 2.1,
+          qf: 82,
+          trust: 74,
+          region: "SG1",
+          ip: "203.0.113.42",
+          version: "v0.4.2",
+        },
+      },
+      { status: 200 }
+    );
+  } catch (e) {
+    return NextResponse.json(
+      {
+        ok: true,
+        summary: {
+          pointsToday: 320,
+          totalPoints: 12450,
+          slk: 12.45,
+          uptimeHours: 6,
+          goalHours: 8,
+          avgBandwidthMbps: 2.1,
+          qf: 82,
+          trust: 74,
+          region: "SG1",
+          ip: "203.0.113.42",
+          version: "v0.4.2",
+        },
+      },
+      { status: 200 }
+    );
   }
-
-  // เดิม: คุณอาจมีแหล่งจริง; ถ้ายังไม่มีให้ส่ง demo เดิมได้เช่นกัน
-  // เพื่อความง่าย: ใช้ dev-sim เป็นดีฟอลต์ในตอนนี้
-  return NextResponse.json({ ok: true, summary: getSummary() }, { headers: { "Cache-Control": "no-store" } });
 }
