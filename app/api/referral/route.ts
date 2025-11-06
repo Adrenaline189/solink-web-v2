@@ -1,12 +1,24 @@
-// app/api/referral/route.ts
 import { NextResponse } from "next/server";
-import { cookies } from "next/headers";
-import { REF_COOKIE_NAME, parseRefCookie } from "@/lib/referral";
-
 export const dynamic = "force-dynamic";
 
-export async function GET() {
-  const raw = cookies().get(REF_COOKIE_NAME)?.value || null;
-  const ref = parseRefCookie(raw);
-  return NextResponse.json({ ok: true, ref }, { headers: { "Cache-Control": "no-store" } });
+function apiBase() {
+  return process.env.NEXT_PUBLIC_API_BASE || "https://api-solink.network";
+}
+
+export async function GET(req: Request) {
+  const cookie = req.headers.get("cookie") || "";
+  const token = cookie.match(/solink_token=([^;]+)/)?.[1];
+
+  if (token) {
+    const r = await fetch(`${apiBase()}/api/points/referral/stats`, {
+      headers: { Authorization: `Bearer ${token}` },
+      cache: "no-store",
+    });
+    if (r.ok) {
+      const j = await r.json().catch(() => null);
+      if (j?.ok) return NextResponse.json(j);
+    }
+  }
+  // demo fallback
+  return NextResponse.json({ ok: true, bonusTotal: 420, referredCount: 5 });
 }
