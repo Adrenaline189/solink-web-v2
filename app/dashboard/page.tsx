@@ -43,10 +43,11 @@ function DashboardInner() {
   const [refLink, setRefLink] = useState("");
   const [copied, setCopied] = useState(false);
 
+  // Build referral link (ไม่ใช้ env ฝั่ง client)
   useEffect(() => {
     const origin =
       typeof window !== "undefined" ? window.location.origin : "https://solink.network";
-    const code = address ? address.slice(0, 8) : (localStorage.getItem("solink_ref_code") || "");
+    const code = address ? address.slice(0, 8) : localStorage.getItem("solink_ref_code") || "";
     const finalCode =
       code ||
       (() => {
@@ -57,6 +58,7 @@ function DashboardInner() {
     setRefLink(`${origin.replace(/\/$/, "")}/r/${encodeURIComponent(finalCode)}`);
   }, [address]);
 
+  // จดจำกระเป๋า + sync
   useEffect(() => {
     if (!address || !connected) return;
     try {
@@ -120,9 +122,18 @@ function DashboardInner() {
             </p>
             {err && <p className="text-rose-400 text-sm mt-1">Error: {err}</p>}
           </div>
+
+          {/* ✅ ปุ่มขนาดเท่ากัน */}
           <div className="flex items-center gap-3">
-            <WalletMultiButton className="rounded-2xl" />
-            <Button variant="secondary" className="rounded-2xl px-5">
+            <WalletMultiButton
+              className="
+                !h-10 !px-5 !text-sm !font-medium !rounded-2xl
+                !bg-slate-900/60 !border !border-slate-700 !text-slate-200
+                hover:!bg-slate-800
+                inline-flex items-center
+              "
+            />
+            <Button variant="secondary" className="h-10 px-5 rounded-2xl">
               Start Sharing Bandwidth <Link2 className="ml-2 h-4 w-4" />
             </Button>
           </div>
@@ -338,7 +349,15 @@ function Meter({ label, value, color }: { label: string; value: number; color: s
   );
 }
 
-function StatusItem({ label, value, positive }: { label: string; value: string; positive?: boolean }) {
+function StatusItem({
+  label,
+  value,
+  positive,
+}: {
+  label: string;
+  value: string;
+  positive?: boolean;
+}) {
   return (
     <div className="flex items-center justify-between py-1.5 border-b border-slate-800 last:border-none">
       <span className="text-slate-400 text-sm">{label}</span>
@@ -400,6 +419,7 @@ function RangeRadios({
   );
 }
 
+/* --------------------------- global style tweaks --------------------------- */
 function DashboardGlobalStyles() {
   return (
     <style jsx global>{`
