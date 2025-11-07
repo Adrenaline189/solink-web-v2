@@ -4,7 +4,6 @@ import Link from "next/link";
 import Footer from "@/components/Footer";
 import SeoJsonLd from "@/components/SeoJsonLd";
 import Reveal from "@/components/Reveal";
-
 import {
   Gauge,
   ShieldCheck,
@@ -16,16 +15,27 @@ import {
   CheckCircle2,
 } from "lucide-react";
 
+/** ---- Metadata (SSR) ---- */
 export const metadata: Metadata = {
   title: "Solink — Share bandwidth. Earn rewards.",
   description: "Share bandwidth. Earn rewards.",
   robots: { index: true, follow: true },
 };
 
+/** ---- Helper SSR: สร้าง base URL แบบเสถียร ----
+ * ใช้เฉพาะฝั่งเซิร์ฟเวอร์ (ไฟล์นี้เป็น Server Component ตามค่าเริ่มต้น)
+ */
+function getSiteUrl() {
+  const envBase = process.env.NEXT_PUBLIC_SITE_URL?.trim();
+  if (envBase) return envBase.replace(/\/$/, "");
+  const vercelUrl = process.env.VERCEL_URL?.trim();
+  if (vercelUrl) return `https://${vercelUrl.replace(/\/$/, "")}`;
+  // fallback สำหรับ dev หรือเมื่อไม่มี env
+  return "https://www.solink.network";
+}
+
 export default function HomePage() {
-  const siteUrl =
-    process.env.NEXT_PUBLIC_SITE_URL ||
-    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000");
+  const siteUrl = getSiteUrl();
 
   // JSON-LD (Website + Organization)
   const jsonLd = {
@@ -80,7 +90,7 @@ export default function HomePage() {
                   Go to Dashboard
                 </Link>
                 <Link
-                  href="https://www.solink.network/presale"
+                  href="/presale"
                   className="rounded-2xl border border-slate-700 hover:bg-slate-900/60 px-5 py-3 transition"
                 >
                   Presale
@@ -319,7 +329,7 @@ function Feature({ icon, title, text }: { icon: React.ReactNode; title: string; 
 
 function Faq({ q, a }: { q: string; a: string }) {
   return (
-    <details className="rounded-xl border border-slate-800 bg-slate-900/40 p-4">
+    <details className="rounded-2xl border border-slate-800 bg-slate-900/40 p-4">
       <summary className="cursor-pointer list-none font-medium">
         {q}
       </summary>
