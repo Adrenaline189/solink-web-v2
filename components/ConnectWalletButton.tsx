@@ -1,33 +1,42 @@
 "use client";
-import { useWallet, WalletMultiButton } from "@solana/wallet-adapter-react-ui";
-import { useEffect, useState } from "react";
-import { signInWithWallet } from "@/lib/auth/siws";
-import { parseRefCookie, REF_COOKIE_NAME } from "@/lib/referral";
 
+import { useEffect, useState } from "react";
+import { WalletMultiButton } from "@solana/wallet-adapter-react-ui";
+import { useWallet } from "@solana/wallet-adapter-react";
+import { signInWithWallet } from "@/lib/auth/siws";
+import { REF_COOKIE_NAME } from "@/lib/referral";
+
+/**
+ * ปุ่ม Connect Wallet ของจริง (Phantom / Solflare / Backpack ฯลฯ)
+ * - เมื่อ connect สำเร็จ จะ sign message
+ * - ส่งข้อมูลไป verify -> ได้ JWT (AUTH cookie)
+ * - จากนั้นยิง /api/user/bootstrap เพื่อสร้าง/อัปเดต user
+ */
 export default function ConnectWalletButton() {
   const { publicKey, signMessage, connected } = useWallet();
   const [bootstrapped, setBootstrapped] = useState(false);
 
   useEffect(() => {
     (async () => {
-      if (!connected || !publicKey || !signMessage) return;
+      if (!connected || !publicKey || !signMessage || bootstrapped) return;
+
       try {
-        // 1) ออก JWT
+        // 1️⃣ เซ็นข้อความเพื่อสร้าง JWT
         await signInWithWallet(publicKey, signMessage);
 
-        // 2) ดึง referral code จาก cookie (ถ้ามี)
-        let referralCode: string | undefined = undefined;
+        // 2️⃣ อ่าน referral code จาก cookie (ถ้ามี)
+        let referralCode: string | undefined;
         const cookieStr = document.cookie || "";
-        const raw = cookieStr.split("; ").find((v) => v.startsWith(`${REF_COOKIE_NAME}=`));
-        if (raw) {
+        const ref = cookieStr.split("; ").find((v) => v.startsWith(`${REF_COOKIE_NAME}=`));
+        if (ref) {
           try {
-            const val = decodeURIComponent(raw.split("=")[1]);
+            const val = decodeURIComponent(ref.split("=")[1]);
             const obj = JSON.parse(val);
             if (obj?.code) referralCode = obj.code;
           } catch {}
         }
 
-        // 3) bootstrap user (บันทึก/อัปเดต user + ผูก ref ถ้ามี)
+        // 3️⃣ ยิง /api/user/bootstrap เพื่อบันทึกผู้ใช้
         await fetch("/api/user/bootstrap", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -36,12 +45,13 @@ export default function ConnectWalletButton() {
         });
 
         setBootstrapped(true);
-      } catch (e) {
-        console.error("wallet sign-in failed", e);
+        console.log("[Solink] Wallet connected and user bootstrapped.");
+      } catch (err) {
+        console.error("[Solink] Wallet connect/sign failed", err);
       }
     })();
-  }, [connected, publicKey, signMessage]);
+  }, [connected, publicKey, signMessage, bootstrapped]);
 
-  // ใช้ปุ่ม modal รวมกระเป๋า
+  // ✅ ใช้ WalletMultiButton (modal รวมกระเป๋า)
   return <WalletMultiButton />;
 }
