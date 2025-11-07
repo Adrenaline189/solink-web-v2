@@ -17,8 +17,9 @@ import { Analytics } from "@vercel/analytics/react";
 import { SpeedInsights } from "@vercel/speed-insights/next";
 import Aurora from "@/components/Aurora";
 
-/* ✅ Solana-only providers */
-import SolanaProviders from "./providers/solana";
+/* ✅ รวม provider ของ Solana ที่รองรับหลาย wallet */
+import WalletProviders from "@/lib/solana/WalletProviders"; // <-- ใช้ไฟล์ใหม่แทน SolanaProviders เดิม
+import ConnectWalletButton from "@/components/ConnectWalletButton"; // เพิ่มปุ่ม connect รวม
 
 const metadataBaseUrl =
   process.env.NEXT_PUBLIC_SITE_URL
@@ -53,7 +54,7 @@ export const metadata: Metadata = {
     ],
     apple: [{ url: "/solink-logo.png" }],
     shortcut: [{ url: "/favicon.ico" }],
-  }
+  },
 };
 
 const THEME_TZ_INIT = `
@@ -93,7 +94,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       </head>
 
       <body className="min-h-screen bg-slate-950 text-slate-100 relative">
-        <SolanaProviders>
+        {/* ✅ ห่อทั้งหมดด้วย WalletProviders (รวม Phantom / Solflare / Backpack ฯลฯ) */}
+        <WalletProviders>
           <Aurora />
 
           <Suspense fallback={null}>
@@ -124,8 +126,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 <MainNav items={[...NAV_ITEMS]} />
               </div>
 
-              <div className="flex items-center gap-2">
+              {/* ✅ แสดงปุ่ม Connect Wallet ด้านบน (ล็อกอินได้ทุกหน้า) */}
+              <div className="flex items-center gap-3">
                 <RefBadge />
+                <ConnectWalletButton />
                 <MobileMenu items={[...NAV_ITEMS]} />
               </div>
             </div>
@@ -139,7 +143,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 
           <Analytics />
           <SpeedInsights />
-        </SolanaProviders>
+        </WalletProviders>
       </body>
     </html>
   );
