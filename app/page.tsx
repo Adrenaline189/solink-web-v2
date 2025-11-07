@@ -80,10 +80,10 @@ export default function HomePage() {
                   Go to Dashboard
                 </Link>
                 <Link
-                  href="/contact"
+                  href="https://www.solink.network/presale"
                   className="rounded-2xl border border-slate-700 hover:bg-slate-900/60 px-5 py-3 transition"
                 >
-                  Talk to us
+                  Presale
                 </Link>
               </div>
 
