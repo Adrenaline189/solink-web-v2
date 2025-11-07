@@ -1,5 +1,6 @@
 // app/dashboard/page.tsx
 "use client";
+
 import dynamic from "next/dynamic";
 const WalletMultiButton = dynamic(
   async () => (await import("@solana/wallet-adapter-react-ui")).WalletMultiButton,
@@ -48,7 +49,12 @@ function DashboardInner() {
       typeof window !== "undefined" ? window.location.origin : "https://solink.network";
     const code = address ? address.slice(0, 8) : (localStorage.getItem("solink_ref_code") || "");
     const finalCode =
-      code || (() => { const c = Math.random().toString(36).slice(2, 10); localStorage.setItem("solink_ref_code", c); return c; })();
+      code ||
+      (() => {
+        const c = Math.random().toString(36).slice(2, 10);
+        try { localStorage.setItem("solink_ref_code", c); } catch {}
+        return c;
+      })();
     setRefLink(`${origin.replace(/\/$/, "")}/r/${encodeURIComponent(finalCode)}`);
   }, [address]);
 
@@ -118,8 +124,8 @@ function DashboardInner() {
             {err && <p className="text-rose-400 text-sm mt-1">Error: {err}</p>}
           </div>
           <div className="flex items-center gap-3">
-            {/* ใช้ปุ่ม Connect ของ react-ui เพื่อความชัวร์ */}
-            <client-only-wallet-button />
+            {/* ✅ ปุ่ม Connect ของ react-ui (no-SSR) */}
+            <WalletMultiButton className="rounded-2xl" />
             <Button variant="secondary" className="rounded-2xl px-5">
               Start Sharing Bandwidth <Link2 className="ml-2 h-4 w-4" />
             </Button>
