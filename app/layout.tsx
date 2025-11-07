@@ -18,12 +18,10 @@ import { Analytics } from "@vercel/analytics/react";
 import { SpeedInsights } from "@vercel/speed-insights/next";
 import Aurora from "@/components/Aurora";
 
-/* ✅ รวม provider ของ Solana ที่รองรับหลาย wallet */
+/* ✅  provider  Solana  wallet all app */
 import WalletProviders from "@/lib/solana/WalletProviders";
-/* ปุ่มเชื่อมกระเป๋า (client component) */
-import ConnectWalletButton from "@/components/ConnectWalletButton";
 
-/* ====== Metadata (รันฝั่งเซิร์ฟเวอร์ ปลอดภัยจาก process.env บน client) ====== */
+/* ====== Metadata (run server) ====== */
 const metadataBaseUrl =
   process.env.NEXT_PUBLIC_SITE_URL
     ? new URL(process.env.NEXT_PUBLIC_SITE_URL)
@@ -60,7 +58,7 @@ export const metadata: Metadata = {
   },
 };
 
-/* ====== ตั้งค่าธีม + timezone เร็วสุดก่อน hydrate ====== */
+/* ====== theme + timezone fast hydrate ====== */
 const THEME_TZ_INIT = `
 (function(){
   try {
@@ -90,11 +88,14 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en" className="dark" suppressHydrationWarning>
       <head>
-        <Script id="theme-tz-init" strategy="beforeInteractive" dangerouslySetInnerHTML={{ __html: THEME_TZ_INIT }} />
+        <Script
+          id="theme-tz-init"
+          strategy="beforeInteractive"
+          dangerouslySetInnerHTML={{ __html: THEME_TZ_INIT }}
+        />
       </head>
 
       <body className="min-h-screen bg-slate-950 text-slate-100 relative">
-        {/* ✅ ครอบทั้งแอปด้วย WalletProviders (Phantom / Solflare / Backpack ฯลฯ) */}
         <WalletProviders>
           <Aurora />
 
@@ -126,10 +127,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 <MainNav items={[...NAV_ITEMS]} />
               </div>
 
-              {/* ✅ ปุ่ม Connect Wallet อยู่ที่เฮดเดอร์ ใช้ได้ทุกหน้า และจดจำกระเป๋า */}
+              {/* ❌ Connect Navbar*/}
               <div className="flex items-center gap-3">
                 <RefBadge />
-                <ConnectWalletButton />
                 <MobileMenu items={[...NAV_ITEMS]} />
               </div>
             </div>
