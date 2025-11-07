@@ -24,7 +24,6 @@ import { ArrowRight, Coins, LineChart as LineIcon, ShieldCheck } from "lucide-re
 
 /* ================== CONFIG ================== */
 const TOTAL_SUPPLY = 1_000_000_000;
-const EXCHANGE_RATE_THB_PER_USDT = 36; // adjust if needed
 
 // ---- Sale Rounds (3 rounds) ----
 const ROUNDS = [
@@ -111,9 +110,6 @@ function formatNumber(n: number) {
 }
 function usd(n: number) {
   return `${n.toLocaleString(undefined, { maximumFractionDigits: 0 })} USDT`;
-}
-function thb(n: number) {
-  return `฿${(n).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
 }
 
 function Counter({
@@ -230,28 +226,77 @@ export default function TokenomicsPage() {
     return ROUNDS.map((r) => {
       const tokens = Math.round((r.percent / 100) * TOTAL_SUPPLY);
       const revenueUSDT = tokens * r.price;
-      const revenueTHB = revenueUSDT * EXCHANGE_RATE_THB_PER_USDT;
-      return { ...r, tokens, revenueUSDT, revenueTHB };
+      return { ...r, tokens, revenueUSDT };
     });
   }, []);
 
   const totals = useMemo(() => {
     const usdt = saleRows.reduce((a, b) => a + b.revenueUSDT, 0);
-    const thb = usdt * EXCHANGE_RATE_THB_PER_USDT;
     const tokens = saleRows.reduce((a, b) => a + b.tokens, 0);
-    return { usdt, thb, tokens };
+    return { usdt, tokens };
   }, [saleRows]);
 
+  // ===== English FAQ (THB-free) =====
   const FAQ_DATA = [
     {
-      q: "เหรียญจะขายทั้งหมดกี่รอบ และได้เงินเท่าไร?",
-      a:
-        `ขายทั้งหมด 3 รอบ: Seed 5%, Private 10%, Public 10% รวม 25% ของ supply (${formatNumber(totals.tokens)} SLK). ` +
-        `ประมาณรายได้รวม ≈ ${usd(totals.usdt)} (~${thb(totals.thb)}).`,
+      q: "What is the total supply of SLK?",
+      a: "The total supply is 1,000,000,000 SLK.",
     },
     {
-      q: "Vesting ป้องกันการเทขายอย่างไร?",
-      a: "ใช้ Cliff + Linear vest สำหรับ Seed/Private และ Public ปล่อยที่ TGE เฉพาะ market liquidity",
+      q: "How is the supply allocated?",
+      a:
+        "Seed 5%, Private Sale 10%, Public Sale 10%, Team & Advisors 20%, Community & Ecosystem 30%, Treasury & Reserve 15%, Marketing & Partnerships 10% (100% total).",
+    },
+    {
+      q: "How many sale rounds are there and what are the prices?",
+      a:
+        "There are 3 rounds: Seed (5%) at $0.003 per SLK, Private (10%) at $0.005 per SLK, Public (10%) at $0.010 per SLK.",
+    },
+    {
+      q: "How many tokens are sold and how much will be raised?",
+      a:
+        `Total sold across rounds ≈ ${formatNumber(totals.tokens)} SLK (25% of supply). ` +
+        `Expected raise ≈ ${usd(totals.usdt)} in total.`,
+    },
+    {
+      q: "What unlocks at TGE?",
+      a: "Public Sale tokens are 100% unlocked at TGE to provide market liquidity. Estimated circulating supply at TGE is ~12% (illustrative).",
+    },
+    {
+      q: "How does vesting work for Seed and Private investors?",
+      a: "Both Seed and Private have a 6-month cliff after TGE, followed by linear vesting over 12 months (1/12 monthly).",
+    },
+    {
+      q: "What is the vesting schedule for Team & Advisors?",
+      a: "12-month cliff after TGE, then linear vesting over 24 months (1/24 monthly).",
+    },
+    {
+      q: "How are Marketing & Partnerships tokens released?",
+      a: "20% unlock at TGE, with the remaining 80% vesting linearly over 12 months.",
+    },
+    {
+      q: "How is the Treasury & Reserve managed?",
+      a: "3-month cliff after TGE; unlocks on-demand (e.g., emergencies, partnerships) under DAO governance.",
+    },
+    {
+      q: "How does the vesting system prevent dumping?",
+      a: "Cliffs and linear vesting schedules smooth unlocks and align incentives among stakeholders.",
+    },
+    {
+      q: "What is the Community & Ecosystem allocation used for?",
+      a: "Airdrops, rewards, and staking incentives; released via campaigns and expected to complete within ~36 months.",
+    },
+    {
+      q: "Is there a long-term emission policy?",
+      a: "Yes — an adaptive emission curve with base decay and periodic adjustments, reviewed quarterly by the DAO.",
+    },
+    {
+      q: "Where can I participate or learn more?",
+      a: "Visit the Presale page to participate and the Whitepaper for full technical and economic details.",
+    },
+    {
+      q: "What does “TGE” mean?",
+      a: "Token Generation Event — when tokens are minted and vesting schedules begin.",
     },
   ];
 
@@ -363,11 +408,11 @@ export default function TokenomicsPage() {
         <div className="mx-auto max-w-6xl">
           <h2 className="text-2xl font-semibold">Sale Rounds & Revenue</h2>
           <p className="text-white/80 mt-2 max-w-prose">
-            Three rounds totaling 25% of supply. Live calculation of tokens, revenue in USDT, and approximate THB.
+            Three rounds totaling 25% of supply. Live calculation of tokens and revenue in USDT.
           </p>
 
           <div className="mt-6 overflow-x-auto rounded-2xl border border-white/10">
-            <table className="min-w-[720px] w-full text-sm">
+            <table className="min-w-[700px] w-full text-sm">
               <thead>
                 <tr className="bg-white/10">
                   <th className="px-4 py-3 text-left font-medium">Round</th>
@@ -375,7 +420,6 @@ export default function TokenomicsPage() {
                   <th className="px-4 py-3 text-right font-medium">Tokens (SLK)</th>
                   <th className="px-4 py-3 text-right font-medium">Price / SLK</th>
                   <th className="px-4 py-3 text-right font-medium">Revenue (USDT)</th>
-                  <th className="px-4 py-3 text-right font-medium">≈ THB</th>
                   <th className="px-4 py-3 text-left font-medium">Vesting</th>
                 </tr>
               </thead>
@@ -387,8 +431,9 @@ export default function TokenomicsPage() {
                     <td className="px-4 py-3 text-right">{formatNumber(r.tokens)}</td>
                     <td className="px-4 py-3 text-right">${r.price.toFixed(3)}</td>
                     <td className="px-4 py-3 text-right">{usd(r.revenueUSDT)}</td>
-                    <td className="px-4 py-3 text-right">{thb(r.revenueTHB)}</td>
-                    <td className="px-4 py-3">{r.cliff === "—" ? r.note : `Cliff ${r.cliff} • Vest ${r.vest} • ${r.note}`}</td>
+                    <td className="px-4 py-3">
+                      {r.cliff === "—" ? r.note : `Cliff ${r.cliff} • Vest ${r.vest} • ${r.note}`}
+                    </td>
                   </tr>
                 ))}
                 <tr className="border-t border-white/10 bg-white/5 font-semibold">
@@ -399,16 +444,11 @@ export default function TokenomicsPage() {
                   <td className="px-4 py-3 text-right">{formatNumber(totals.tokens)}</td>
                   <td className="px-4 py-3 text-right">—</td>
                   <td className="px-4 py-3 text-right">{usd(totals.usdt)}</td>
-                  <td className="px-4 py-3 text-right">{thb(totals.thb)}</td>
                   <td className="px-4 py-3">—</td>
                 </tr>
               </tbody>
             </table>
           </div>
-
-          <p className="text-white/70 text-xs mt-3">
-            * THB uses an assumed rate {EXCHANGE_RATE_THB_PER_USDT.toFixed(0)} THB / 1 USDT for illustration.
-          </p>
         </div>
       </Section>
 
