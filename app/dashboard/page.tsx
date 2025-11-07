@@ -17,64 +17,64 @@ import {
 } from "../../lib/data/dashboard";
 
 import HourlyPoints from "../../components/charts/HourlyPoints";
-import ConnectWalletButton from "../../components/ConnectWalletButton";
-import { useWallet } from "../../lib/useWallet";
-import { buildReferralLink, getUserCode } from "../../lib/referral";
+import { useWallet } from "@solana/wallet-adapter-react";
 import { usePrefs } from "../../lib/prefs-client";
-
-// ⬇️ ดึงสถิติ referral จริงจาก /api/referral
-import type { ReferralStats } from "../../lib/data/referral";
-import { fetchReferralStats } from "../../lib/data/referral";
 
 /* ---------------------------------- page ----------------------------------- */
 function DashboardInner() {
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
   const [hourly, setHourly] = useState<HourlyPoint[]>([]);
   const [txData, setTxData] = useState<Tx[]>([]);
-  const [refStats, setRefStats] = useState<ReferralStats | null>(null);
-
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
 
   const [range, setRange] = useState<Range>("today");
-  const { prefs } = usePrefs(); // tz/units มาจาก Settings
+  const { prefs } = usePrefs();
   const tz = prefs.tz;
 
-  const { address } = useWallet();
+  const { publicKey, connected } = useWallet();
+  const address = publicKey?.toBase58();
   const [refLink, setRefLink] = useState("");
   const [copied, setCopied] = useState(false);
 
-  // (optional) เก็บจำนวนครั้งที่ผู้ใช้กดส่งคำเชิญไว้ใน localStorage เพื่อโชว์ "Invites sent"
-  const [invitesSent, setInvitesSent] = useState<number | null>(null);
+  // Build referral link (ไม่ใช้ process.env ฝั่ง client)
   useEffect(() => {
-    try {
-      const v = localStorage.getItem("solink_invites_sent");
-      if (v != null) setInvitesSent(Number(v) || 0);
-    } catch {}
-  }, []);
-
-  // เตรียม referral link
-  useEffect(() => {
-    const code = getUserCode(address);
-    setRefLink(buildReferralLink(code));
+    const origin =
+      typeof window !== "undefined" ? window.location.origin : "https://solink.network";
+    const code = address ? address.slice(0, 8) : (localStorage.getItem("solink_ref_code") || "");
+    const finalCode =
+      code || (() => { const c = Math.random().toString(36).slice(2, 10); localStorage.setItem("solink_ref_code", c); return c; })();
+    setRefLink(`${origin.replace(/\/$/, "")}/r/${encodeURIComponent(finalCode)}`);
   }, [address]);
 
-  // 🔧 สร้างฟังก์ชัน refresh แบบ useCallback แล้วผูก dependency = [range]
+  // จำกระเป๋า + sync ไปยัง /api/prefs
+  useEffect(() => {
+    if (!address || !connected) return;
+    try {
+      localStorage.setItem("solink_wallet", address);
+      document.cookie = `solink_wallet=${address}; Path=/; SameSite=Lax; Max-Age=2592000`; // 30 วัน
+    } catch {}
+    // best-effort บันทึก user
+    fetch("/api/prefs", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ wallet: address }),
+    }).catch(() => {});
+  }, [address, connected]);
+
   const refresh = useCallback(() => {
     const ac = new AbortController();
     (async () => {
       try {
         setLoading(true);
-        const [s, h, t, rs] = await Promise.all([
+        const [s, h, t] = await Promise.all([
           fetchDashboardSummary(ac.signal),
           fetchHourly(range, ac.signal),
           fetchTransactions(range, ac.signal),
-          fetchReferralStats(ac.signal), // <= เพิ่ม referral stats
         ]);
         setSummary(s ?? null);
         setHourly(Array.isArray(h) ? h : []);
         setTxData(Array.isArray(t) ? t : []);
-        setRefStats(rs ?? { bonusTotal: 0, referredCount: 0 });
         setErr(null);
       } catch (e: any) {
         setErr(e?.message || "Failed to load");
@@ -85,7 +85,6 @@ function DashboardInner() {
     return () => ac.abort();
   }, [range]);
 
-  // โหลดเมื่อ range เปลี่ยน
   useEffect(() => {
     const cleanup = refresh();
     return cleanup;
@@ -99,7 +98,7 @@ function DashboardInner() {
     } catch {}
   };
 
-  const nodeStatus = "● Connected";
+  const nodeStatus = connected ? "● Connected" : "○ Disconnected";
 
   return (
     <div className="min-h-screen text-slate-100 p-6">
@@ -114,7 +113,8 @@ function DashboardInner() {
             {err && <p className="text-rose-400 text-sm mt-1">Error: {err}</p>}
           </div>
           <div className="flex items-center gap-3">
-            <ConnectWalletButton />
+            {/* ใช้ปุ่ม Connect ของ react-ui เพื่อความชัวร์ */}
+            <client-only-wallet-button />
             <Button variant="secondary" className="rounded-2xl px-5">
               Start Sharing Bandwidth <Link2 className="ml-2 h-4 w-4" />
             </Button>
@@ -180,7 +180,7 @@ function DashboardInner() {
           </Card>
         </div>
 
-        {/* Filters (native radios – full a11y) */}
+        {/* Filters */}
         <div className="flex flex-wrap items-center gap-3 mb-6">
           <RangeRadios value={range} onChange={setRange} />
           <div className="flex items-center gap-2">
@@ -215,55 +215,21 @@ function DashboardInner() {
                   <Button onClick={copy} className="rounded-xl px-4" title="Copy referral link">
                     {copied ? "Copied!" : "Copy"}
                   </Button>
-                  <Button
-                    variant="secondary"
-                    className="rounded-xl"
-                    title="Share referral link"
-                    onClick={() => {
-                      try {
-                        const n = (invitesSent ?? 0) + 1;
-                        localStorage.setItem("solink_invites_sent", String(n));
-                        setInvitesSent(n);
-                        if (navigator.share) {
-                          navigator.share({ url: refLink, title: "Join Solink", text: "Share bandwidth. Earn rewards." }).catch(() => {});
-                        }
-                      } catch {}
-                    }}
-                  >
+                  <Button variant="secondary" className="rounded-xl" title="Share referral link">
                     Share
                   </Button>
                 </div>
               </div>
-
-              <h4 className="text-sm font-semibold mt-5 mb-2">Referral stats</h4>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <Stat label="Invites sent" value={invitesSent != null ? String(invitesSent) : "—"} />
-                <Stat label="Accepted" value={refStats ? String(refStats.referredCount) : (loading ? "—" : "0")} />
-                <Stat
-                  label="Points from referrals"
-                  value={refStats ? `+${refStats.bonusTotal}` : (loading ? "—" : "0")}
-                />
-              </div>
-
-              <h4 className="text-sm font-semibold mt-5 mb-1">How it works</h4>
-              <ul className="list-disc pl-5 text-slate-400 text-sm">
-                <li>You earn bonus points when your friend signs up and starts sharing.</li>
-                <li>Higher quality/uptime increases your referral multiplier.</li>
-              </ul>
             </CardContent>
           </Card>
 
           <Card>
             <CardContent className="p-5">
               <h3 className="text-lg font-semibold mb-3">System Status</h3>
-              <StatusItem label="Node" value={nodeStatus} positive />
+              <StatusItem label="Node" value={nodeStatus} positive={connected} />
               <StatusItem label="Region" value={summary?.region ?? "—"} />
               <StatusItem label="IP Address" value={summary?.ip ?? "—"} />
               <StatusItem label="Client Version" value={summary?.version ?? "—"} />
-              <div className="mt-3 flex gap-2">
-                <Button className="rounded-xl">View details</Button>
-                <Button variant="secondary" className="rounded-xl">Retry</Button>
-              </div>
             </CardContent>
           </Card>
         </div>
@@ -307,7 +273,7 @@ function DashboardInner() {
         </Card>
 
         <footer className="text-xs text-slate-500 mt-8">
-          © {new Date().getFullYear()} Solink • data via API routes.
+          © {new Date().getFullYear()} Solink • Demo build — data via API routes.
         </footer>
       </div>
     </div>
@@ -344,7 +310,6 @@ function KPI({
   );
 }
 
-/** map ค่า 0–100 → คลาสความกว้างแบบเป็นสเต็ป (step 5) เพื่อเลี่ยง inline style */
 function widthClass(value: number) {
   let v = Math.max(0, Math.min(100, value ?? 0));
   v = Math.round(v / 5) * 5;
@@ -375,16 +340,6 @@ function StatusItem({ label, value, positive }: { label: string; value: string; 
   );
 }
 
-function Stat({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-xl border border-slate-800 p-3">
-      <div className="text-xs text-slate-400">{label}</div>
-      <div className="text-lg font-semibold">{value}</div>
-    </div>
-  );
-}
-
-/** Native radio group (ไม่มี ARIA warnings, รองรับคีย์บอร์ด/AT อัตโนมัติ) */
 function RangeRadios({
   value,
   onChange,
@@ -441,7 +396,6 @@ function RangeRadios({
 function DashboardGlobalStyles() {
   return (
     <style jsx global>{`
-      /* ความกว้างแบบ step 5% เพื่อเลี่ยง inline style */
       .mw-0 { width: 0% } .mw-5 { width: 5% } .mw-10 { width: 10% } .mw-15 { width: 15% }
       .mw-20 { width: 20% } .mw-25 { width: 25% } .mw-30 { width: 30% } .mw-35 { width: 35% }
       .mw-40 { width: 40% } .mw-45 { width: 45% } .mw-50 { width: 50% } .mw-55 { width: 55% }
