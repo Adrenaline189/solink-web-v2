@@ -1,44 +1,47 @@
-// components/ConnectWalletButton.tsx
 "use client";
-
-import { Button } from "@/components/ui/button";
-import { Wallet } from "lucide-react";
-
-// ถ้ามีฮุค useWallet อยู่แล้ว ให้ใช้ของเดิม; ด้านล่างเป็นสตับใช้งานได้ทันที
-function useWalletStub() {
-  const [address, setAddress] = React.useState<string | undefined>();
-  const [connecting, setConnecting] = React.useState(false);
-
-  const connect = async () => {
-    setConnecting(true);
-    setTimeout(() => {
-      setAddress("0xA1b2...C3d4");
-      setConnecting(false);
-    }, 600);
-  };
-  const disconnect = () => setAddress(undefined);
-
-  return { address, connect, disconnect, connecting };
-}
-
-import * as React from "react";
-// ถ้ามีของจริง ให้เปลี่ยนเป็น: import { useWallet } from "@/lib/useWallet";
-const useWallet = useWalletStub;
+import { useWallet, WalletMultiButton } from "@solana/wallet-adapter-react-ui";
+import { useEffect, useState } from "react";
+import { signInWithWallet } from "@/lib/auth/siws";
+import { parseRefCookie, REF_COOKIE_NAME } from "@/lib/referral";
 
 export default function ConnectWalletButton() {
-  const { address, connect, disconnect, connecting } = useWallet();
+  const { publicKey, signMessage, connected } = useWallet();
+  const [bootstrapped, setBootstrapped] = useState(false);
 
-  if (address) {
-    return (
-      <Button onClick={disconnect} className="rounded-2xl px-5">
-        {address} <Wallet className="ml-2 h-4 w-4" />
-      </Button>
-    );
-  }
+  useEffect(() => {
+    (async () => {
+      if (!connected || !publicKey || !signMessage) return;
+      try {
+        // 1) ออก JWT
+        await signInWithWallet(publicKey, signMessage);
 
-  return (
-    <Button onClick={connect} disabled={connecting} className="rounded-2xl px-5">
-      {connecting ? "Connecting…" : "Connect Wallet"} <Wallet className="ml-2 h-4 w-4" />
-    </Button>
-  );
+        // 2) ดึง referral code จาก cookie (ถ้ามี)
+        let referralCode: string | undefined = undefined;
+        const cookieStr = document.cookie || "";
+        const raw = cookieStr.split("; ").find((v) => v.startsWith(`${REF_COOKIE_NAME}=`));
+        if (raw) {
+          try {
+            const val = decodeURIComponent(raw.split("=")[1]);
+            const obj = JSON.parse(val);
+            if (obj?.code) referralCode = obj.code;
+          } catch {}
+        }
+
+        // 3) bootstrap user (บันทึก/อัปเดต user + ผูก ref ถ้ามี)
+        await fetch("/api/user/bootstrap", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ referralCode }),
+        });
+
+        setBootstrapped(true);
+      } catch (e) {
+        console.error("wallet sign-in failed", e);
+      }
+    })();
+  }, [connected, publicKey, signMessage]);
+
+  // ใช้ปุ่ม modal รวมกระเป๋า
+  return <WalletMultiButton />;
 }
