@@ -1,44 +1,42 @@
 // app/api/dashboard/transactions/route.ts
 import { NextResponse } from "next/server";
-import { API_BASE } from "@/lib/env";
+import { apiGet } from "@/lib/server/api";
 
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+const DEMO_TX = [
+  { ts: "2025-08-15 14:30", type: "Accrual",  amount: "+120 pts",            note: "Uptime slot bonus" },
+  { ts: "2025-08-15 13:10", type: "Convert",  amount: "-1,000 pts → +1 SLK", note: "Conversion" },
+  { ts: "2025-08-15 12:55", type: "Referral", amount: "+50 pts",             note: "Invite accepted" },
+  { ts: "2025-08-15 11:05", type: "Accrual",  amount: "+80 pts",             note: "Usage accrual" },
+];
+
+export async function GET(_req: Request) {
   try {
-    const r = await fetch(`${API_BASE}/api/points/events?limit=20`, {
-      credentials: "include",
-      cache: "no-store",
-    });
-    if (!r.ok) throw new Error("upstream error");
-    const data = (await r.json()) as {
-      ok: boolean;
-      events?: Array<{ createdAt: string; type: string; amount: number }>;
-    };
-
-    const tx =
-      (data.events || []).map((e) => ({
-        ts: new Date(e.createdAt).toISOString().replace("T", " ").slice(0, 16),
-        type: e.type === "referral_bonus" ? "Referral" : "Accrual",
-        amount: `${e.amount > 0 ? "+" : ""}${e.amount} pts`,
-        note: e.type === "referral_bonus" ? "Referral bonus" : "Earned",
-      })) ?? [];
-
-    if (tx.length === 0) throw new Error("empty");
-    return NextResponse.json({ ok: true, tx }, { status: 200 });
-  } catch {
-    // demo
-    return NextResponse.json(
-      {
-        ok: true,
-        tx: [
-          { ts: "2025-08-15 14:30", type: "Accrual",  amount: "+120 pts",            note: "Uptime slot bonus" },
-          { ts: "2025-08-15 13:10", type: "Convert",  amount: "-1,000 pts → +1 SLK", note: "Conversion" },
-          { ts: "2025-08-15 12:55", type: "Referral", amount: "+50 pts",             note: "Invite accepted" },
-          { ts: "2025-08-15 11:05", type: "Accrual",  amount: "+80 pts",             note: "Usage accrual" },
-        ],
-      },
-      { status: 200 }
+    const json = await apiGet<{ ok: boolean; events: Array<{ createdAt: string; type: string; amount: number; meta?: any }> }>(
+      "/api/points/events?limit=30"
     );
+
+    const tx = (json?.events || []).map((e) => {
+      const d = new Date(e.createdAt);
+      const ts = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")} ${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`;
+      const type =
+        e.type === "extension_farm" ? "Accrual" :
+        e.type === "referral_bonus" ? "Referral" :
+        e.type;
+      const amount =
+        e.type === "extension_farm" || e.type === "referral_bonus"
+          ? `+${e.amount} pts`
+          : String(e.amount);
+      const note =
+        e.type === "referral_bonus" && e.meta?.referredUserId
+          ? `Referral: ${e.meta.referredUserId}`
+          : e.meta?.reason || "";
+      return { ts, type, amount, note };
+    });
+
+    return NextResponse.json({ ok: true, tx });
+  } catch {
+    return NextResponse.json({ ok: true, tx: DEMO_TX });
   }
 }
