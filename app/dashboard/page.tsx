@@ -1,8 +1,8 @@
 // app/dashboard/page.tsx
 "use client";
 
-import dynamic from "next/dynamic";
-const WalletMultiButton = dynamic(
+import NextDynamic from "next/dynamic";
+const WalletMultiButton = NextDynamic(
   async () => (await import("@solana/wallet-adapter-react-ui")).WalletMultiButton,
   { ssr: false }
 );
@@ -43,7 +43,6 @@ function DashboardInner() {
   const [refLink, setRefLink] = useState("");
   const [copied, setCopied] = useState(false);
 
-  // Build referral link (ไม่ใช้ process.env ฝั่ง client)
   useEffect(() => {
     const origin =
       typeof window !== "undefined" ? window.location.origin : "https://solink.network";
@@ -58,14 +57,12 @@ function DashboardInner() {
     setRefLink(`${origin.replace(/\/$/, "")}/r/${encodeURIComponent(finalCode)}`);
   }, [address]);
 
-  // จำกระเป๋า + sync ไปยัง /api/prefs
   useEffect(() => {
     if (!address || !connected) return;
     try {
       localStorage.setItem("solink_wallet", address);
-      document.cookie = `solink_wallet=${address}; Path=/; SameSite=Lax; Max-Age=2592000`; // 30 วัน
+      document.cookie = `solink_wallet=${address}; Path=/; SameSite=Lax; Max-Age=2592000`;
     } catch {}
-    // best-effort บันทึก user
     fetch("/api/prefs", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -124,7 +121,6 @@ function DashboardInner() {
             {err && <p className="text-rose-400 text-sm mt-1">Error: {err}</p>}
           </div>
           <div className="flex items-center gap-3">
-            {/* ✅ ปุ่ม Connect ของ react-ui (no-SSR) */}
             <WalletMultiButton className="rounded-2xl" />
             <Button variant="secondary" className="rounded-2xl px-5">
               Start Sharing Bandwidth <Link2 className="ml-2 h-4 w-4" />
