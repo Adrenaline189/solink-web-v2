@@ -22,13 +22,29 @@ import {
 import { motion, useInView } from "framer-motion";
 import { ArrowRight, Coins, LineChart as LineIcon, ShieldCheck } from "lucide-react";
 
-// ---------------- Data ----------------
+/* ================== CONFIG ================== */
 const TOTAL_SUPPLY = 1_000_000_000;
+const EXCHANGE_RATE_THB_PER_USDT = 36; // adjust if needed
 
+// ---- Sale Rounds (3 rounds) ----
+const ROUNDS = [
+  { name: "Seed",    percent: 5,  price: 0.003,  cliff: "6m", vest: "12m", note: "Linear vest (1/12 monthly) after cliff" },
+  { name: "Private", percent: 10, price: 0.005,  cliff: "6m", vest: "12m", note: "Linear vest (1/12 monthly) after cliff" },
+  { name: "Public",  percent: 10, price: 0.010,  cliff: "—",  vest: "—",   note: "100% unlock at TGE (liquidity)" },
+];
+
+// ---- Distribution (pie) ----
+// Replace old 15% Private with 5% Seed + 10% Private
 const DISTRIBUTION = [
   {
-    name: "Private Sale (15%)",
-    value: 15,
+    name: "Seed (5%)",
+    value: 5,
+    color: "#a78bfa",
+    details: "Cliff: 6 months after TGE • Vesting: Linear 12 months (1/12 each month)",
+  },
+  {
+    name: "Private Sale (10%)",
+    value: 10,
     color: "#8b5cf6",
     details: "Cliff: 6 months after TGE • Vesting: Linear 12 months (1/12 each month)",
   },
@@ -66,25 +82,7 @@ const DISTRIBUTION = [
   },
 ];
 
-const VESTING_MILESTONES = [
-  { t: "TGE", title: "≈12% circulating", body: "Public + part of Marketing unlocked" },
-  { t: "Month 6", title: "Private Sale cliff ends", body: "Start 12-month linear unlock" },
-  { t: "Month 12", title: "Team cliff ends", body: "Start 24-month linear unlock" },
-  { t: "Month 36", title: "Community fully distributed", body: "Campaign-based releases complete" },
-];
-
-const FAQ_DATA = [
-  {
-    q: "How does vesting prevent dumping?",
-    a: "By using cliffs + linear vesting schedules for major allocations and campaign-based releases for community rewards.",
-  },
-  {
-    q: "What happens after community rewards are exhausted?",
-    a: "Token demand will be sustained by real utility (payments, discounts) and DAO-controlled Treasury mechanisms.",
-  },
-];
-
-// ----- Extra datasets (unchanged demo) -----
+// ---- Demo series (unchanged) ----
 const VESTING_SERIES = [
   { m: 0,  privateSale: 0,   team: 0, community: 2,  total: 12 },
   { m: 6,  privateSale: 2,   team: 0, community: 5,  total: 17 },
@@ -107,9 +105,15 @@ const QUARTERLY_ALLOC = [
   { q: "Q4", rewards: 45, staking: 35, quests: 15, referral: 5 },
 ];
 
-// ---------------- Helpers ----------------
+/* ================== HELPERS ================== */
 function formatNumber(n: number) {
   return n.toLocaleString();
+}
+function usd(n: number) {
+  return `${n.toLocaleString(undefined, { maximumFractionDigits: 0 })} USDT`;
+}
+function thb(n: number) {
+  return `฿${(n).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
 }
 
 function Counter({
@@ -171,9 +175,7 @@ function Accordion({ items }: { items: { q: string; a: string }[] }) {
           >
             <span className="font-medium">{it.q}</span>
             <ArrowRight
-              className={`size-5 transition-transform ${
-                open === idx ? "rotate-90" : ""
-              }`}
+              className={`size-5 transition-transform ${open === idx ? "rotate-90" : ""}`}
             />
           </button>
           <div
@@ -216,12 +218,42 @@ function StatCard({
   );
 }
 
-// ---------------- Page ----------------
+/* ================== PAGE ================== */
 export default function TokenomicsPage() {
   const totalPercent = useMemo(
     () => DISTRIBUTION.reduce((a, b) => a + b.value, 0),
     []
   );
+
+  // Compute sale round aggregates
+  const saleRows = useMemo(() => {
+    return ROUNDS.map((r) => {
+      const tokens = Math.round((r.percent / 100) * TOTAL_SUPPLY);
+      const revenueUSDT = tokens * r.price;
+      const revenueTHB = revenueUSDT * EXCHANGE_RATE_THB_PER_USDT;
+      return { ...r, tokens, revenueUSDT, revenueTHB };
+    });
+  }, []);
+
+  const totals = useMemo(() => {
+    const usdt = saleRows.reduce((a, b) => a + b.revenueUSDT, 0);
+    const thb = usdt * EXCHANGE_RATE_THB_PER_USDT;
+    const tokens = saleRows.reduce((a, b) => a + b.tokens, 0);
+    return { usdt, thb, tokens };
+  }, [saleRows]);
+
+  const FAQ_DATA = [
+    {
+      q: "เหรียญจะขายทั้งหมดกี่รอบ และได้เงินเท่าไร?",
+      a:
+        `ขายทั้งหมด 3 รอบ: Seed 5%, Private 10%, Public 10% รวม 25% ของ supply (${formatNumber(totals.tokens)} SLK). ` +
+        `ประมาณรายได้รวม ≈ ${usd(totals.usdt)} (~${thb(totals.thb)}).`,
+    },
+    {
+      q: "Vesting ป้องกันการเทขายอย่างไร?",
+      a: "ใช้ Cliff + Linear vest สำหรับ Seed/Private และ Public ปล่อยที่ TGE เฉพาะ market liquidity",
+    },
+  ];
 
   return (
     <main className="relative min-h-screen bg-gradient-to-b from-slate-950 via-indigo-950 to-slate-950 text-white">
@@ -234,12 +266,9 @@ export default function TokenomicsPage() {
       {/* HERO */}
       <Section className="px-6 md:px-10 pt-20">
         <div className="mx-auto max-w-6xl">
-          <h1 className="text-4xl md:text-5xl font-bold tracking-tight">
-            Solink Tokenomics
-          </h1>
+          <h1 className="text-4xl md:text-5xl font-bold tracking-tight">Solink Tokenomics</h1>
           <p className="mt-4 text-white/80 max-w-prose">
-            Transparent and utility-driven. Explore supply, distribution,
-            vesting and emissions — with interactive charts.
+            Transparent and utility-driven. Explore supply, distribution, vesting and emissions — with interactive charts.
           </p>
           <div className="mt-6 flex flex-wrap gap-4">
             <StatCard
@@ -248,16 +277,8 @@ export default function TokenomicsPage() {
               value={<Counter to={TOTAL_SUPPLY} className="text-2xl font-semibold" />}
               suffix="SLK"
             />
-            <StatCard
-              icon={<LineIcon className="size-5" />}
-              label="Circulating at TGE"
-              value={"≈12%"}
-            />
-            <StatCard
-              icon={<ShieldCheck className="size-5" />}
-              label="Vesting Discipline"
-              value={"Cliffs + Linear"}
-            />
+            <StatCard icon={<LineIcon className="size-5" />} label="Circulating at TGE" value={"≈12%"} />
+            <StatCard icon={<ShieldCheck className="size-5" />} label="Vesting Discipline" value={"Cliffs + Linear"} />
           </div>
 
           <div className="mt-8 flex gap-3">
@@ -321,19 +342,11 @@ export default function TokenomicsPage() {
 
           <div className="space-y-4">
             <h2 className="text-2xl font-semibold">Balanced Allocation</h2>
-            <p className="text-white/80 max-w-prose">
-              Supports growth, funds development, and ensures longevity.
-            </p>
+            <p className="text-white/80 max-w-prose">Supports growth, funds development, and ensures longevity.</p>
             <ul className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {DISTRIBUTION.map((d) => (
-                <li
-                  key={d.name}
-                  className="flex items-start gap-3 rounded-2xl border border-white/10 p-3"
-                >
-                  <span
-                    className="mt-1 size-3 rounded-full"
-                    style={{ background: d.color }}
-                  />
+                <li key={d.name} className="flex items-start gap-3 rounded-2xl border border-white/10 p-3">
+                  <span className="mt-1 size-3 rounded-full" style={{ background: d.color }} />
                   <div>
                     <div className="font-medium">{d.name}</div>
                     <div className="text-white/70 text-sm">{d.details}</div>
@@ -345,11 +358,65 @@ export default function TokenomicsPage() {
         </div>
       </Section>
 
+      {/* NEW) Sale Rounds & Revenue */}
+      <Section className="px-6 md:px-10 py-16">
+        <div className="mx-auto max-w-6xl">
+          <h2 className="text-2xl font-semibold">Sale Rounds & Revenue</h2>
+          <p className="text-white/80 mt-2 max-w-prose">
+            Three rounds totaling 25% of supply. Live calculation of tokens, revenue in USDT, and approximate THB.
+          </p>
+
+          <div className="mt-6 overflow-x-auto rounded-2xl border border-white/10">
+            <table className="min-w-[720px] w-full text-sm">
+              <thead>
+                <tr className="bg-white/10">
+                  <th className="px-4 py-3 text-left font-medium">Round</th>
+                  <th className="px-4 py-3 text-right font-medium">Allocation</th>
+                  <th className="px-4 py-3 text-right font-medium">Tokens (SLK)</th>
+                  <th className="px-4 py-3 text-right font-medium">Price / SLK</th>
+                  <th className="px-4 py-3 text-right font-medium">Revenue (USDT)</th>
+                  <th className="px-4 py-3 text-right font-medium">≈ THB</th>
+                  <th className="px-4 py-3 text-left font-medium">Vesting</th>
+                </tr>
+              </thead>
+              <tbody>
+                {saleRows.map((r) => (
+                  <tr key={r.name} className="border-t border-white/10">
+                    <td className="px-4 py-3">{r.name}</td>
+                    <td className="px-4 py-3 text-right">{r.percent}%</td>
+                    <td className="px-4 py-3 text-right">{formatNumber(r.tokens)}</td>
+                    <td className="px-4 py-3 text-right">${r.price.toFixed(3)}</td>
+                    <td className="px-4 py-3 text-right">{usd(r.revenueUSDT)}</td>
+                    <td className="px-4 py-3 text-right">{thb(r.revenueTHB)}</td>
+                    <td className="px-4 py-3">{r.cliff === "—" ? r.note : `Cliff ${r.cliff} • Vest ${r.vest} • ${r.note}`}</td>
+                  </tr>
+                ))}
+                <tr className="border-t border-white/10 bg-white/5 font-semibold">
+                  <td className="px-4 py-3">Total</td>
+                  <td className="px-4 py-3 text-right">
+                    {ROUNDS.reduce((a, b) => a + b.percent, 0)}%
+                  </td>
+                  <td className="px-4 py-3 text-right">{formatNumber(totals.tokens)}</td>
+                  <td className="px-4 py-3 text-right">—</td>
+                  <td className="px-4 py-3 text-right">{usd(totals.usdt)}</td>
+                  <td className="px-4 py-3 text-right">{thb(totals.thb)}</td>
+                  <td className="px-4 py-3">—</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <p className="text-white/70 text-xs mt-3">
+            * THB uses an assumed rate {EXCHANGE_RATE_THB_PER_USDT.toFixed(0)} THB / 1 USDT for illustration.
+          </p>
+        </div>
+      </Section>
+
       {/* B) Line — Vesting cumulative unlock */}
       <Section className="px-6 md:px-10 py-16">
         <div className="mx-auto max-w-6xl">
           <h2 className="text-2xl font-semibold">Vesting — Cumulative Unlock</h2>
-        <p className="text-white/80 mt-2 max-w-prose">
+          <p className="text-white/80 mt-2 max-w-prose">
             Unlocks designed to prevent sudden supply shocks and align incentives across stakeholders.
           </p>
           <div className="mt-6 h-80 rounded-2xl border border-white/10 bg-white/5 p-4">
@@ -384,15 +451,15 @@ export default function TokenomicsPage() {
               <AreaChart data={EMISSIONS_SERIES}>
                 <defs>
                   <linearGradient id="gEm" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#22d3ee" stopOpacity={0.8}/>
-                    <stop offset="95%" stopColor="#22d3ee" stopOpacity={0.1}/>
+                    <stop offset="5%" stopColor="#22d3ee" stopOpacity={0.8} />
+                    <stop offset="95%" stopColor="#22d3ee" stopOpacity={0.1} />
                   </linearGradient>
                 </defs>
                 <CartesianGrid strokeDasharray="4 4" stroke="#ffffff22" />
                 <XAxis dataKey="year" stroke="#ffffff88" />
                 <YAxis stroke="#ffffff88" />
                 <Tooltip />
-                <Area type="monotone" dataKey="emissions" stroke="#22d3ee" fill="url(#gEm)" strokeWidth={2}/>
+                <Area type="monotone" dataKey="emissions" stroke="#22d3ee" fill="url(#gEm)" strokeWidth={2} />
               </AreaChart>
             </ResponsiveContainer>
           </div>
@@ -429,7 +496,9 @@ export default function TokenomicsPage() {
         <div className="mx-auto max-w-3xl">
           <h2 className="text-2xl font-semibold">FAQs</h2>
           <p className="text-white/80 mt-2">Investors & users ask these the most.</p>
-          <div className="mt-6"><Accordion items={FAQ_DATA} /></div>
+          <div className="mt-6">
+            <Accordion items={FAQ_DATA} />
+          </div>
         </div>
       </Section>
 
