@@ -43,7 +43,6 @@ function DashboardInner() {
   const [refLink, setRefLink] = useState("");
   const [copied, setCopied] = useState(false);
 
-  // Build referral link (ไม่ใช้ env ฝั่ง client)
   useEffect(() => {
     const origin =
       typeof window !== "undefined" ? window.location.origin : "https://solink.network";
@@ -58,7 +57,6 @@ function DashboardInner() {
     setRefLink(`${origin.replace(/\/$/, "")}/r/${encodeURIComponent(finalCode)}`);
   }, [address]);
 
-  // จดจำกระเป๋า + sync
   useEffect(() => {
     if (!address || !connected) return;
     try {
@@ -123,16 +121,9 @@ function DashboardInner() {
             {err && <p className="text-rose-400 text-sm mt-1">Error: {err}</p>}
           </div>
 
-          {/* ✅ ปุ่มขนาดเท่ากัน */}
+          {/* ✅ ปุ่มสองอัน “สูง-กว้างเท่ากันจริง” */}
           <div className="flex items-center gap-3">
-            <WalletMultiButton
-              className="
-                !h-10 !px-5 !text-sm !font-medium !rounded-2xl
-                !bg-slate-900/60 !border !border-slate-700 !text-slate-200
-                hover:!bg-slate-800
-                inline-flex items-center
-              "
-            />
+            <WalletMultiButton className="solink-wa-equal" />
             <Button variant="secondary" className="h-10 px-5 rounded-2xl">
               Start Sharing Bandwidth <Link2 className="ml-2 h-4 w-4" />
             </Button>
@@ -423,12 +414,33 @@ function RangeRadios({
 function DashboardGlobalStyles() {
   return (
     <style jsx global>{`
+      /* width utilities for Meter bars */
       .mw-0 { width: 0% } .mw-5 { width: 5% } .mw-10 { width: 10% } .mw-15 { width: 15% }
       .mw-20 { width: 20% } .mw-25 { width: 25% } .mw-30 { width: 30% } .mw-35 { width: 35% }
       .mw-40 { width: 40% } .mw-45 { width: 45% } .mw-50 { width: 50% } .mw-55 { width: 55% }
       .mw-60 { width: 60% } .mw-65 { width: 65% } .mw-70 { width: 70% } .mw-75 { width: 75% }
       .mw-80 { width: 80% } .mw-85 { width: 85% } .mw-90 { width: 90% } .mw-95 { width: 95% }
       .mw-100 { width: 100% }
+
+      /* ✅ บังคับขนาด WalletMultiButton ให้เท่าปุ่ม secondary (h-10 px-5 rounded-2xl) */
+      .solink-wa-equal.wallet-adapter-button,
+      .wallet-adapter-button.solink-wa-equal {
+        height: 40px !important;          /* h-10 */
+        padding: 0 20px !important;       /* px-5 */
+        border-radius: 16px !important;   /* rounded-2xl */
+        font-size: 0.95rem !important;
+        line-height: 1 !important;
+        display: inline-flex !important;
+        align-items: center !important;
+      }
+      /* จูน icon margin ภายในปุ่ม wallet ให้บาลานซ์ */
+      .solink-wa-equal .wallet-adapter-button-start-icon,
+      .solink-wa-equal .wallet-adapter-button-end-icon {
+        height: 1.25rem !important; /* h-5 */
+        width: 1.25rem !important;
+      }
+      .solink-wa-equal .wallet-adapter-button-start-icon { margin-right: .5rem !important; }
+      .solink-wa-equal .wallet-adapter-button-end-icon { margin-left:  .5rem !important; }
     `}</style>
   );
 }
