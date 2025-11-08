@@ -29,10 +29,10 @@ const INIT_TODAY: HourlyPoint[] = [
 ];
 
 const INIT_TX: Tx[] = [
-  { ts: "2025-08-15 14:30", type: "Accrual", amount: "+120 pts",            note: "Uptime slot bonus" },
-  { ts: "2025-08-15 13:10", type: "Convert", amount: "-1,000 pts → +1 SLK", note: "Conversion" },
-  { ts: "2025-08-15 12:55", type: "Referral", amount: "+50 pts",             note: "Invite accepted" },
-  { ts: "2025-08-15 11:05", type: "Accrual",  amount: "+80 pts",             note: "Usage accrual" },
+  { ts: "2025-08-15 14:30", type: "Accrual",  amount: 120,   note: "Uptime slot bonus (+pts)" },
+  { ts: "2025-08-15 13:10", type: "Convert",  amount: -1000, note: "Conversion → +1 SLK" },
+  { ts: "2025-08-15 12:55", type: "Referral", amount: 50,    note: "Invite accepted (+pts)" },
+  { ts: "2025-08-15 11:05", type: "Accrual",  amount: 80,    note: "Usage accrual (+pts)" },
 ];
 
 /* ---------- tiny utils ---------- */
@@ -87,7 +87,7 @@ export function getSummary(): DashboardSummary {
 
 export function getTx(_range: Range = "today"): Tx[] {
   initIfNeeded();
-  // เดโม: ใช้ชุดเดียวพอ
+  // demo: return a single shared set
   return state.tx;
 }
 
@@ -95,7 +95,7 @@ export function getHourly(range: Range = "today"): HourlyPoint[] {
   initIfNeeded();
   if (range === "today") return state.hourly;
 
-  // สร้างกราฟรายวันแบบง่าย ๆ สำหรับ 7d/30d
+  // simple daily aggregation for 7d/30d
   const days = range === "7d" ? 7 : 30;
   const labels = lastNDaysLabels(days);
   return labels.map((lbl, i) => {
@@ -111,8 +111,8 @@ export function accrue(amountPts = 20, mbps = 1.5) {
   state.summary.pointsToday += amountPts;
   state.summary.totalPoints += amountPts;
   state.summary.avgBandwidthMbps = Number(((state.summary.avgBandwidthMbps * 4 + mbps) / 5).toFixed(2));
-  state.summary.qf = Math.max(60, Math.min(98, state.summary.qf + (Math.random() > 0.6 ? 1 : 0) - 0));
-  state.summary.trust = Math.max(60, Math.min(96, state.summary.trust + (Math.random() > 0.7 ? 1 : 0) - 0));
+  state.summary.qf = Math.max(60, Math.min(98, state.summary.qf + (Math.random() > 0.6 ? 1 : 0)));
+  state.summary.trust = Math.max(60, Math.min(96, state.summary.trust + (Math.random() > 0.7 ? 1 : 0)));
 
   const now = new Date();
   const label = `${pad(now.getHours())}:00`;
@@ -128,7 +128,7 @@ export function accrue(amountPts = 20, mbps = 1.5) {
   state.tx.unshift({
     ts: `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}`,
     type: "Accrual",
-    amount: `+${amountPts} pts`,
-    note: "Demo accrual",
+    amount: amountPts, // numeric, unit kept in note
+    note: "Demo accrual (+pts)",
   });
 }
