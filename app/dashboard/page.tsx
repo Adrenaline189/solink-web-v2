@@ -111,20 +111,6 @@ function DashboardInner() {
   return (
     <div className="min-h-screen text-slate-100 p-6">
       {/* ⬇⬇⬇ Override ขนาด WalletMultiButton ให้เท่ากับปุ่ม Start Sharing */}
-      <style jsx global>{`
-        /* ให้มีผลเฉพาะ container ที่ใส่คลาส .wa-equal */
-        .wa-equal .wallet-adapter-button,
-        .wa-equal .wallet-adapter-button-trigger {
-          height: 48px !important;           /* เท่ากับ h-12 */
-          padding: 12px 20px !important;      /* เท่ากับ py-3 px-5 */
-          border-radius: 1rem !important;     /* เท่ากับ rounded-2xl */
-          font-size: 16px !important;         /* text-base */
-          line-height: 1.2 !important;
-          display: inline-flex !important;
-          align-items: center !important;
-          gap: .5rem !important;
-        }
-      `}</style>
 
       <div className="max-w-7xl mx-auto">
         {/* Header */}
