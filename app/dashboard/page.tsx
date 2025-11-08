@@ -25,6 +25,14 @@ import {
 import HourlyPoints from "../../components/charts/HourlyPoints";
 import { useWallet } from "@solana/wallet-adapter-react";
 import { usePrefs } from "../../lib/prefs-client";
+// ...existing imports...
+import EarnTester from "@/components/EarnTester";
+
+// inside your Default export component's JSX:
+{/* Dev tester box */}
+<div className="mt-6">
+  <EarnTester />
+</div>
 
 /* ---------------------------------- page ----------------------------------- */
 function DashboardInner() {
