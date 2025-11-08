@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "scripts": {
     "dev": "next dev",
-    "seed:demo": "ts-node --transpile-only scripts/seed-demo.ts",
+    "seed:demo": "ts-node --transpile-only --compiler-options '{\"module\":\"CommonJS\"}' scripts/seed-demo.ts",
     "build": "next build",
     "vercel-build": "prisma migrate deploy && next build",
     "start": "next start",
