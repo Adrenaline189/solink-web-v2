@@ -46,7 +46,7 @@ function DashboardInner() {
   useEffect(() => {
     const origin =
       typeof window !== "undefined" ? window.location.origin : "https://solink.network";
-    const code = address ? address.slice(0, 8) : localStorage.getItem("solink_ref_code") || "";
+    const code = address ? address.slice(0, 8) : (localStorage.getItem("solink_ref_code") || "");
     const finalCode =
       code ||
       (() => {
@@ -110,21 +110,35 @@ function DashboardInner() {
 
   return (
     <div className="min-h-screen text-slate-100 p-6">
+      {/* ⬇⬇⬇ Override ขนาด WalletMultiButton ให้เท่ากับปุ่ม Start Sharing */}
+      <style jsx global>{`
+        /* ให้มีผลเฉพาะ container ที่ใส่คลาส .wa-equal */
+        .wa-equal .wallet-adapter-button,
+        .wa-equal .wallet-adapter-button-trigger {
+          height: 48px !important;           /* เท่ากับ h-12 */
+          padding: 12px 20px !important;      /* เท่ากับ py-3 px-5 */
+          border-radius: 1rem !important;     /* เท่ากับ rounded-2xl */
+          font-size: 16px !important;         /* text-base */
+          line-height: 1.2 !important;
+          display: inline-flex !important;
+          align-items: center !important;
+          gap: .5rem !important;
+        }
+      `}</style>
+
       <div className="max-w-7xl mx-auto">
         {/* Header */}
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6">
           <div>
             <h1 className="text-3xl font-bold tracking-tight">Solink Dashboard</h1>
-            <p className="text-slate-400">
-              {loading ? "Loading data…" : "Wired to API routes."}
-            </p>
+            <p className="text-slate-400">{loading ? "Loading data…" : "Wired to API routes."}</p>
             {err && <p className="text-rose-400 text-sm mt-1">Error: {err}</p>}
           </div>
 
-          {/* ✅ ปุ่มสองอัน “สูง-กว้างเท่ากันจริง” */}
-          <div className="flex items-center gap-3">
-            <WalletMultiButton className="solink-wa-equal" />
-            <Button variant="secondary" className="h-10 px-5 rounded-2xl">
+          {/* ใส่คลาส wa-equal ที่ wrapper เดียว เพื่อให้ override ทำงาน */}
+          <div className="wa-equal flex items-center gap-3">
+            <WalletMultiButton />
+            <Button variant="secondary" className="rounded-2xl px-5 h-12">
               Start Sharing Bandwidth <Link2 className="ml-2 h-4 w-4" />
             </Button>
           </div>
@@ -340,15 +354,7 @@ function Meter({ label, value, color }: { label: string; value: number; color: s
   );
 }
 
-function StatusItem({
-  label,
-  value,
-  positive,
-}: {
-  label: string;
-  value: string;
-  positive?: boolean;
-}) {
+function StatusItem({ label, value, positive }: { label: string; value: string; positive?: boolean }) {
   return (
     <div className="flex items-center justify-between py-1.5 border-b border-slate-800 last:border-none">
       <span className="text-slate-400 text-sm">{label}</span>
@@ -372,9 +378,7 @@ function RangeRadios({
 
   return (
     <fieldset className="flex items-center gap-2">
-      <legend id="range-legend" className="text-xs text-slate-400 mr-1">
-        Range:
-      </legend>
+      <legend id="range-legend" className="text-xs text-slate-400 mr-1">Range:</legend>
       <div className="flex items-center gap-2" aria-labelledby="range-legend">
         {opts.map((o) => {
           const id = `range-${o.v}`;
@@ -410,37 +414,15 @@ function RangeRadios({
   );
 }
 
-/* --------------------------- global style tweaks --------------------------- */
 function DashboardGlobalStyles() {
   return (
     <style jsx global>{`
-      /* width utilities for Meter bars */
       .mw-0 { width: 0% } .mw-5 { width: 5% } .mw-10 { width: 10% } .mw-15 { width: 15% }
       .mw-20 { width: 20% } .mw-25 { width: 25% } .mw-30 { width: 30% } .mw-35 { width: 35% }
       .mw-40 { width: 40% } .mw-45 { width: 45% } .mw-50 { width: 50% } .mw-55 { width: 55% }
       .mw-60 { width: 60% } .mw-65 { width: 65% } .mw-70 { width: 70% } .mw-75 { width: 75% }
       .mw-80 { width: 80% } .mw-85 { width: 85% } .mw-90 { width: 90% } .mw-95 { width: 95% }
       .mw-100 { width: 100% }
-
-      /* ✅ บังคับขนาด WalletMultiButton ให้เท่าปุ่ม secondary (h-10 px-5 rounded-2xl) */
-      .solink-wa-equal.wallet-adapter-button,
-      .wallet-adapter-button.solink-wa-equal {
-        height: 40px !important;          /* h-10 */
-        padding: 0 20px !important;       /* px-5 */
-        border-radius: 16px !important;   /* rounded-2xl */
-        font-size: 0.95rem !important;
-        line-height: 1 !important;
-        display: inline-flex !important;
-        align-items: center !important;
-      }
-      /* จูน icon margin ภายในปุ่ม wallet ให้บาลานซ์ */
-      .solink-wa-equal .wallet-adapter-button-start-icon,
-      .solink-wa-equal .wallet-adapter-button-end-icon {
-        height: 1.25rem !important; /* h-5 */
-        width: 1.25rem !important;
-      }
-      .solink-wa-equal .wallet-adapter-button-start-icon { margin-right: .5rem !important; }
-      .solink-wa-equal .wallet-adapter-button-end-icon { margin-left:  .5rem !important; }
     `}</style>
   );
 }
