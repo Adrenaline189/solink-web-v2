@@ -1,4 +1,5 @@
 // types/dashboard.ts
+
 export type DashboardSummary = {
   pointsToday: number;
   totalPoints: number;
@@ -8,13 +9,13 @@ export type DashboardSummary = {
   avgBandwidthMbps: number;
   qf: number;    // Quality Factor (0-100)
   trust: number; // Trust Score (0-100)
-  region: string;
-  ip: string;
-  version: string;
+  region: string | null;
+  ip: string | null;
+  version: string | null;
 };
 
 export type HourlyPoint = {
-  // ใช้ "ts" (ISO string) หรือ "time" ("09:00") ได้อย่างใดอย่างหนึ่ง
+  // Use either "ts" (ISO string) or "time" ("09:00")
   ts?: string;
   time?: string;
   points: number;
@@ -22,8 +23,8 @@ export type HourlyPoint = {
 };
 
 export type Tx = {
-  ts: string;   // ISO string หรือ "YYYY-MM-DD HH:mm"
-  type: string; // e.g. Accrual / Convert / Referral
-  amount: string;
+  ts: string;    // ISO string or "YYYY-MM-DD HH:mm"
+  type: string;  // e.g., Accrual / Convert / Referral
+  amount: number;
   note: string;
 };
