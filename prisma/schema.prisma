@@ -1,0 +1,49 @@
+// ----- Prisma Client -----
+generator client {
+  provider = "prisma-client-js"
+}
+
+// ----- PostgreSQL datasource -----
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// =========================
+//        MODELS
+// =========================
+
+model Setting {
+  id     String  @id @default(cuid())
+  userId String?           
+  key    String
+  value  String
+
+  @@unique([userId, key])
+  @@index([key])
+}
+
+model User {
+  id        String       @id @default(cuid())
+  wallet    String?      @unique
+  createdAt DateTime     @default(now())
+  events    PointEvent[]
+}
+
+model PointEvent {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  type      String
+  amount    Int
+  meta      Json?
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt])
+}
+
+model PointBalance {
+  userId    String   @id
+  balance   Int      @default(0)
+  updatedAt DateTime @updatedAt
+}
