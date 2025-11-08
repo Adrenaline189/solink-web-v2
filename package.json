@@ -4,6 +4,7 @@
   "version": "0.1.0",
   "scripts": {
     "dev": "next dev",
+    "seed:demo": "ts-node --transpile-only scripts/seed-demo.ts",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
