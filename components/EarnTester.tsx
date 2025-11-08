@@ -6,94 +6,75 @@ export default function EarnTester() {
   const [wallet, setWallet] = useState("demo_wallet");
   const [type, setType] = useState("extension_farm");
   const [amount, setAmount] = useState(50);
+  const [resText, setResText] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [out, setOut] = useState<string | null>(null);
-  const [err, setErr] = useState<string | null>(null);
 
   async function handleEarn() {
     setLoading(true);
-    setOut(null);
-    setErr(null);
+    setResText(null);
+
     try {
       const res = await fetch("/api/points/earn", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          // On the server we validate API_KEY via headers.
-          "x-api-key": process.env.NEXT_PUBLIC_FAKE_HEADER ?? "solink_secret_12345",
+          "x-api-key": "solink_secret_12345",
         },
-        body: JSON.stringify({ wallet, type, amount }),
+        body: JSON.stringify({
+          wallet,
+          type,
+          amount,
+          nonce: `dev-${Date.now()}`,
+        }),
       });
       const data = await res.json();
-      if (!res.ok || data?.ok === false) {
-        throw new Error(data?.error || `HTTP ${res.status}`);
-      }
-      setOut(JSON.stringify(data, null, 2));
-    } catch (e: any) {
-      setErr(e?.message || "Request failed");
+      setResText(JSON.stringify(data, null, 2));
+    } catch (err) {
+      setResText(String(err));
     } finally {
       setLoading(false);
     }
   }
 
   return (
-    <div className="rounded-2xl border border-gray-200 p-4 shadow-sm">
-      <div className="mb-3 font-semibold">Dev • Earn Points Tester</div>
+    <div className="rounded-2xl border border-gray-200 bg-black/10 p-4 mt-6">
+      <h2 className="text-lg font-semibold mb-3">Developer Test Earn</h2>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-3">
-        <label className="flex flex-col gap-1">
-          <span className="text-sm text-gray-600">Wallet</span>
-          <input
-            className="rounded-lg border p-2"
-            value={wallet}
-            onChange={(e) => setWallet(e.target.value)}
-            placeholder="wallet id"
-          />
-        </label>
-
-        <label className="flex flex-col gap-1">
-          <span className="text-sm text-gray-600">Type</span>
-          <input
-            className="rounded-lg border p-2"
-            value={type}
-            onChange={(e) => setType(e.target.value)}
-            placeholder="extension_farm | referral | convert"
-          />
-        </label>
-
-        <label className="flex flex-col gap-1">
-          <span className="text-sm text-gray-600">Amount</span>
-          <input
-            className="rounded-lg border p-2"
-            type="number"
-            value={amount}
-            onChange={(e) => setAmount(Number(e.target.value))}
-            placeholder="50"
-            min={1}
-          />
-        </label>
+        <input
+          className="rounded-lg border p-2 bg-gray-900 text-white"
+          value={wallet}
+          onChange={(e) => setWallet(e.target.value)}
+          placeholder="wallet address"
+        />
+        <input
+          className="rounded-lg border p-2 bg-gray-900 text-white"
+          value={type}
+          onChange={(e) => setType(e.target.value)}
+          placeholder="type"
+        />
+        <input
+          className="rounded-lg border p-2 bg-gray-900 text-white"
+          type="number"
+          value={amount}
+          onChange={(e) => setAmount(Number(e.target.value))}
+          placeholder="amount"
+        />
       </div>
 
       <button
         onClick={handleEarn}
         disabled={loading}
-        className="rounded-xl px-4 py-2 bg-black text-white disabled:opacity-60"
+        className="rounded-lg bg-indigo-600 hover:bg-indigo-700 px-4 py-2 text-white font-medium"
       >
         {loading ? "Sending..." : "Add Points"}
       </button>
 
-      <div className="mt-4">
-        {out && (
-          <pre className="text-xs bg-gray-50 border rounded-lg p-3 overflow-auto">
-            {out}
-          </pre>
-        )}
-        {err && (
-          <div className="text-sm text-red-600">
-            {err}
-          </div>
-        )}
-      </div>
+      {resText && (
+        <pre className="mt-3 text-xs bg-black/40 text-green-400 rounded-lg p-3 overflow-x-auto">
+          {resText}
+        </pre>
+      )}
     </div>
   );
 }
