@@ -37,6 +37,7 @@ model PointEvent {
   type      String
   amount    Int
   meta      Json?
+  nonce     String?  @unique
   createdAt DateTime @default(now())
 
   @@index([userId, createdAt])
