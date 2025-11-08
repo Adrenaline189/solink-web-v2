@@ -83,6 +83,17 @@ a { @apply hover:opacity-85 transition; }
 .recharts-cartesian-axis-tick-value { font-size: 10px; fill: #94a3b8; }
 .recharts-default-tooltip { font-size: 12px; }
 
+
+/* globals.css */
+.wa-equal .wallet-adapter-button,
+.wa-equal .wallet-adapter-button-trigger {
+  height: 44px;
+  padding: 0 16px;
+  border-radius: 12px;
+  font-weight: 600;
+}
+
+
 /* --- Progress bar (แทน inline styles) --- */
 .slk-meter {
   -webkit-appearance: none;
