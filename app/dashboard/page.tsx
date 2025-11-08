@@ -13,7 +13,7 @@ export const dynamic = "force-dynamic";
 import { Card, CardContent } from "../../components/ui/card";
 import { Button } from "../../components/ui/button";
 import { Link2, Gauge, Award, Activity, Cloud, TrendingUp } from "lucide-react";
-
+import EarnTester from "@/components/EarnTester";
 import type { DashboardSummary, HourlyPoint, Tx } from "../../types/dashboard";
 import {
   fetchDashboardSummary,
@@ -25,14 +25,6 @@ import {
 import HourlyPoints from "../../components/charts/HourlyPoints";
 import { useWallet } from "@solana/wallet-adapter-react";
 import { usePrefs } from "../../lib/prefs-client";
-// ...existing imports...
-import EarnTester from "@/components/EarnTester";
-
-// inside your Default export component's JSX:
-{/* Dev tester box */}
-<div className="mt-6">
-  <EarnTester />
-</div>
 
 /* ---------------------------------- page ----------------------------------- */
 function DashboardInner() {
@@ -183,6 +175,17 @@ function DashboardInner() {
             loading={loading}
           />
         </div>
+
+export default function DashboardPage() {
+  return (
+    <div className="space-y-6">
+      {/* ...ของเดิม... */}
+
+      {/* Developer Test */}
+      <EarnTester />
+    </div>
+  );
+}
 
         {/* Charts + Quality Panel */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
