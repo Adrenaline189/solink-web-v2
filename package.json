@@ -6,6 +6,7 @@
     "dev": "next dev",
     "seed:demo": "ts-node --transpile-only scripts/seed-demo.ts",
     "build": "next build",
+    "vercel-build": "prisma migrate deploy && next build",
     "start": "next start",
     "lint": "next lint",
     "lint:fix": "next lint --fix",
@@ -53,6 +54,7 @@
     "eslint-config-next": "14.2.5",
     "prettier": "^3.6.2",
     "prisma": "^5.22.0",
+    "ts-node": "^10.9.2",
     "typescript": "^5.9.2"
   },
   "engines": {
