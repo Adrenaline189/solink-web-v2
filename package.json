@@ -17,6 +17,7 @@
     "postinstall": "prisma generate"
   },
   "dependencies": {
+    "@prisma/client": "^6.19.0",
     "@rainbow-me/rainbowkit": "^2.2.8",
     "@solana/wallet-adapter-backpack": "^0.1.14",
     "@solana/wallet-adapter-base": "^0.9.27",
@@ -51,8 +52,13 @@
     "eslint": "^8.57.0",
     "eslint-config-next": "14.2.5",
     "prettier": "^3.6.2",
+<<<<<<< HEAD
     "typescript": "^5.9.2",
     "prisma": "^5.22.0"
+=======
+    "prisma": "^6.19.0",
+    "typescript": "^5.9.2"
+>>>>>>> 90a6d3d (fix: remove comments in package.json for vercel build)
   },
   "engines": {
     "node": ">=18.17"
