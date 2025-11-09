@@ -1,0 +1,18 @@
+{
+  "baseUrl": "https://api-solink.network",
+  "farmType": "extension_farm",
+  "amountPerShot": 50,
+  "bursts": 40,
+  "concurrency": 5,
+  "dailyCap": 2000,
+  "wallets": [
+    { "wallet": "demo_wallet_test1" },
+    { "wallet": "demo_wallet_test2", "token": "STATIC_JWT_TOKEN_IF_YOU_HAVE" }
+  ],
+  "metaPrefix": "dash",
+  "pauseMsBetweenShots": 120,
+  "maxRetries": 6,
+  "backoffBaseMs": 500,
+  "backoffJitterMs": 250,
+  "stopWhenAllDone": true
+}
