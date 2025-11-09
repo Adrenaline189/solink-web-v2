@@ -7,7 +7,7 @@ export async function POST(req: NextRequest) {
   try {
     const { wallet = "demo_wallet", type = "extension_farm", amount = 50, meta = {} } = await req.json();
 
-    // 1) demo-login เพื่อเอา JWT
+    // --- 1) login เพื่อขอ token ---
     const loginRes = await fetch(`${API}/api/auth/demo-login`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -20,7 +20,7 @@ export async function POST(req: NextRequest) {
     }
     const { token } = await loginRes.json();
 
-    // 2) ยิง earn ด้วย Bearer token
+    // --- 2) ยิง earn ด้วย Bearer token ---
     const earnRes = await fetch(`${API}/api/points/earn`, {
       method: "POST",
       headers: {
