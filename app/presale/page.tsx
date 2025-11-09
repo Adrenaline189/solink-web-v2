@@ -20,11 +20,26 @@ type Phase = {
   priceUsd: number; hardCapUsd: number; softCapUsd?: number;
 };
 
+// Auto pick next year (Bangkok +07:00). Adjust time if needed.
+const YEAR = new Date().getFullYear() + 1;
+const TZ = "+07:00";
+
+// Start: Jan 1 (19:00) — End: Jan 7 (19:00)
+const PRESALE_START = `${YEAR}-01-01T19:00:00${TZ}`;
+const PRESALE_END   = `${YEAR}-01-07T19:00:00${TZ}`;
+
 const PHASES: Phase[] = [
-  { key: "early",  label: "Early",  start: process.env.NEXT_PUBLIC_PRESALE_START ?? "2025-09-20T19:00:00+07:00", end: "2025-09-23T19:00:00+07:00", priceUsd: 0.018, hardCapUsd: 500_000, softCapUsd: 200_000 },
-  { key: "phase2", label: "Phase 2", start: "2025-09-23T19:00:00+07:00", end: "2025-09-28T19:00:00+07:00", priceUsd: 0.020, hardCapUsd: 1_000_000 },
-  { key: "fcfs",   label: "FCFS",   start: "2025-09-28T19:00:00+07:00", end: "2025-10-02T19:00:00+07:00", priceUsd: 0.022, hardCapUsd: 1_500_000 },
+  {
+    key: "main",
+    label: "Presale",
+    start: process.env.NEXT_PUBLIC_PRESALE_START ?? PRESALE_START,
+    end: PRESALE_END,
+    priceUsd: 0.020,          
+    hardCapUsd: 1_500_000,   
+    softCapUsd: 200_000,
+  },
 ];
+
 
 const SOL_TREASURY = process.env.NEXT_PUBLIC_SOLANA_TREASURY || "11111111111111111111111111111111";
 
