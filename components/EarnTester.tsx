@@ -12,19 +12,15 @@ export default function EarnTester() {
   async function handleEarn() {
     setLoading(true);
     setResText(null);
-
     try {
-      const res = await fetch("/api/points/earn", {
+      const res = await fetch("/api/dev/earn", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-api-key": "solink_secret_12345",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           wallet,
           type,
           amount,
-          nonce: `dev-${Date.now()}`,
+          meta: { source: "dashboard" },
         }),
       });
       const data = await res.json();
