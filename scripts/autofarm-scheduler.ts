@@ -139,7 +139,7 @@ async function main() {
     )
   );
 
-  if (DRY_RUN) console.log(chalk.yellow("[INFO] DRY-RUN: No API calls")));
+  if (DRY_RUN) console.log(chalk.yellow("[INFO] DRY-RUN: No API calls"));
   if (cfg.adaptiveMode) console.log(chalk.yellow("[INFO] Adaptive mode enabled")));
 
   // Global rate limiter
