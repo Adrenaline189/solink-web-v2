@@ -2,26 +2,28 @@
   "baseUrl": "https://api-solink.network",
   "farmType": "extension_farm",
   "amountPerShot": 50,
-  "bursts": 20,
-  "concurrency": 3,
+  "bursts": 40,
+  "concurrency": 5,
   "pauseMsBetweenShots": 180,
-  "gapMsBetweenBursts": 5000,
+  "gapMsBetweenBursts": 0,
   "dailyCap": 2000,
   "wallets": [
-    { "wallet": "demo_wallet_test1", "token": "eyJhbGciOiJIUzI1NiIsInR5..." },
-    { "wallet": "demo_wallet_test2", "token": "eyJhbGciOiJIUzI1NiIsInR5..." }
+    { "wallet": "demo_wallet_test1", "token": "REPLACE_WITH_REAL_TOKEN" },
+    { "wallet": "demo_wallet_test2", "token": "REPLACE_WITH_REAL_TOKEN" }
   ],
   "metaPrefix": "dash",
-  "maxRetries": 8,
+
+  "maxRetries": 6,
   "backoffBaseMs": 800,
   "backoffJitterMs": 400,
+
   "adaptiveMode": true,
   "adaptive": {
     "windowSize": 20,
-    "high429Ratio": 0.2,
+    "high429Ratio": 0.25,
     "cooldownMs": 2000,
     "minPause": 120,
-    "maxPause": 350,
-    "step": 20
+    "maxPause": 450,
+    "step": 25
   }
 }
