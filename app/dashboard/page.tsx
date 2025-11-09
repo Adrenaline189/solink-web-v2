@@ -25,7 +25,7 @@ import {
 import HourlyPoints from "../../components/charts/HourlyPoints";
 import { useWallet } from "@solana/wallet-adapter-react";
 import { usePrefs } from "../../lib/prefs-client";
-
+import TurboFarm from "@/components/TurboFarm";
 /* ---------------------------------- page ----------------------------------- */
 function DashboardInner() {
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
@@ -129,6 +129,11 @@ function DashboardInner() {
             </Button>
           </div>
         </div>
+
+        <div className="mb-6">
+  <EarnTester />
+  <TurboFarm />   {/* เพิ่มบล็อกนี้ */}
+</div>
 
         {/* Developer Test */}
         <div className="mb-6">
