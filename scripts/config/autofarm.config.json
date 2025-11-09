@@ -2,31 +2,25 @@
   "baseUrl": "https://api-solink.network",
   "farmType": "extension_farm",
   "amountPerShot": 50,
-
-  "bursts": 20,                     // แบ่งเป็นก้อนเล็ก 2x20 แทนยิง 40 รวดเดียว
-  "concurrency": 3,                 // ลดจาก 5 -> 3
-  "pauseMsBetweenShots": 200,       // จาก 120 -> 200ms (จังหวะช้าลงนิดเดียว แต่เสถียรขึ้น)
-  "gapMsBetweenBursts": 5000,       // พัก 5s ระหว่างก้อน เพื่อลดโอกาสชน window
-
+  "bursts": 20,
+  "concurrency": 3,
+  "pauseMsBetweenShots": 180,
+  "gapMsBetweenBursts": 5000,
   "dailyCap": 2000,
-
   "wallets": [
-    { "wallet": "demo_wallet_test1" },
-    { "wallet": "demo_wallet_test2", "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJkZW1vX3dhbGxldF90ZXN0Iiwid2FsbGV0IjoiZGVtb193YWxsZXRfdGVzdDIiLCJpYXQiOjE3NjI3MDkyMjMsImV4cCI6MTc2MzMxNDAyM30.lL-rXZAZy32r3b1Vmk-u_Zr-GWiBmkL-J_zrAVzFQvc" } // เติม token ที่ถูกต้อง (ดูข้อ 2)
+    { "wallet": "demo_wallet_test1", "token": "eyJhbGciOiJIUzI1NiIsInR5..." },
+    { "wallet": "demo_wallet_test2", "token": "eyJhbGciOiJIUzI1NiIsInR5..." }
   ],
-
   "metaPrefix": "dash",
   "maxRetries": 8,
   "backoffBaseMs": 800,
   "backoffJitterMs": 400,
-  "stopWhenAllDone": true,
-
   "adaptiveMode": true,
   "adaptive": {
     "windowSize": 20,
-    "high429Ratio": 0.2,            // ถ้า 429 เกิน 20% ของหน้าต่าง → ผ่อนคันเร่ง
+    "high429Ratio": 0.2,
     "cooldownMs": 2000,
-    "minPause": 150,
+    "minPause": 120,
     "maxPause": 350,
     "step": 20
   }
