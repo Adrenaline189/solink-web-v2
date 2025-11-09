@@ -26,7 +26,6 @@ import HourlyPoints from "../../components/charts/HourlyPoints";
 import { useWallet } from "@solana/wallet-adapter-react";
 import { usePrefs } from "../../lib/prefs-client";
 import TurboFarm from "@/components/TurboFarm";
-import TurboFarm from "@/components/TurboFarm";
 import PerWalletBreakdown from "@/components/PerWalletBreakdown";
 /* ---------------------------------- page ----------------------------------- */
 function DashboardInner() {
