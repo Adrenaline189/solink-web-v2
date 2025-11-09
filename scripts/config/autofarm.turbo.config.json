@@ -8,15 +8,13 @@
   "gapMsBetweenBursts": 0,
   "dailyCap": 2000,
   "wallets": [
-    { "wallet": "demo_wallet_test1", "token": "REPLACE_WITH_REAL_TOKEN" },
-    { "wallet": "demo_wallet_test2", "token": "REPLACE_WITH_REAL_TOKEN", "dailyCapOverride": 1000 }
+    { "wallet": "demo_wallet_test1", "token": "REPLACE_WITH_TOKEN" },
+    { "wallet": "demo_wallet_test2", "token": "REPLACE_WITH_TOKEN" }
   ],
   "metaPrefix": "dash",
-
   "maxRetries": 7,
   "backoffBaseMs": 900,
   "backoffJitterMs": 500,
-
   "adaptiveMode": true,
   "adaptive": {
     "windowSize": 24,
