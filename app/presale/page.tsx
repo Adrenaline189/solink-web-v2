@@ -156,7 +156,7 @@ export default function PresaleSolanaOnlyPage() {
   const c = countdown(target, nowMs);
 
   // demo progress (?sold=)
-  const [soldUSD, setSoldUSD] = useState<number>(250_000);
+  const [soldUSD, setSoldUSD] = useState<number>(0);
   useEffect(() => {
     const s = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("sold") : null;
     if (s && !Number.isNaN(Number(s))) setSoldUSD(Number(s));
