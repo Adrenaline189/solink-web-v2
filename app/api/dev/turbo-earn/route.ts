@@ -44,9 +44,9 @@ async function fireEarn(
   }
 }
 
-/* ---------- retry + exponential backoff เมื่อโดน 429 ---------- */
+/* ---------- retry + exponential backoff ---------- */
 const MAX_RETRIES = 5;
-const BASE_BACKOFF = 300; // ms
+const BASE_BACKOFF = 300;
 async function fireEarnWithRetry(
   token: string,
   type: EarnType,
@@ -65,7 +65,7 @@ async function fireEarnWithRetry(
   }
 }
 
-/* ---------- auth & summary (ดึงแต้มวันนี้) ---------- */
+/* ---------- auth & summary ---------- */
 async function loginWallet(wallet: string): Promise<string | null> {
   try {
     const r = await fetch(`${API_BASE}/api/auth/demo-login`, {
@@ -81,7 +81,6 @@ async function loginWallet(wallet: string): Promise<string | null> {
 }
 
 async function fetchPointsToday(token: string): Promise<number> {
-  // พยายามหลาย path ตามที่ backend อาจตั้งไว้ต่างกัน
   const paths = [
     "/api/users/me/summary",
     "/api/dashboard/summary",
@@ -95,7 +94,6 @@ async function fetchPointsToday(token: string): Promise<number> {
       });
       if (!r.ok) continue;
       const j = await r.json().catch(() => ({}));
-      // ค่าที่มักพบ: pointsToday หรือ todayPoints หรือ daily.points
       const candidates = [
         j?.pointsToday,
         j?.todayPoints,
@@ -105,10 +103,10 @@ async function fetchPointsToday(token: string): Promise<number> {
       const found = candidates.find((v) => typeof v === "number");
       if (typeof found === "number") return found;
     } catch {
-      // try next
+      continue;
     }
   }
-  return 0; // ถ้าหาไม่เจอ ให้ถือว่าเริ่ม 0 เพื่อไม่บล็อกการทดสอบ
+  return 0;
 }
 
 /* ========================= Route Handler ========================= */
@@ -116,20 +114,18 @@ export async function POST(req: Request) {
   try {
     const body = await req.json();
     const input = BodySchema.parse(body);
-
     const { wallets, type, amount, bursts, concurrency, minDelayMs, jitterMs, stopAtCap } = input;
 
     // login ทุก wallet
     const tokens: Record<string, string> = {};
     for (const w of wallets) {
       const t = await loginWallet(w);
-      if (!t) {
+      if (!t)
         return NextResponse.json({ ok: false, error: `Cannot login wallet ${w}` }, { status: 401 });
-      }
       tokens[w] = t;
     }
 
-    // อ่านแต้มวันนี้ก่อนเริ่ม (ต่อกระเป๋า)
+    // อ่านแต้มวันนี้ก่อนเริ่ม
     const startTodayMap: Record<string, number> = {};
     await Promise.all(
       wallets.map(async (w) => {
@@ -145,8 +141,8 @@ export async function POST(req: Request) {
       amountPerShot: number;
       bursts: number;
       concurrency: number;
-      perWalletBalance: Record<string, number>; // แสดง "แต้มวันนี้หลังจบ" (startToday + localEarned)
-      totalEarned: number; // รวมเฉพาะที่ยิงรอบนี้สำเร็จ
+      perWalletBalance: Record<string, number>;
+      totalEarned: number;
       dailyCap: number;
     } = {
       wallets,
@@ -161,15 +157,21 @@ export async function POST(req: Request) {
 
     const samples: Array<{ wallet: string; shot: number; resp: FireResp }> = [];
 
-    /* ---------- ยิงเป็น wallet ๆ พร้อมคุม concurrency ด้วย batch ---------- */
+    /* ---------- ยิงต่อ wallet ---------- */
     for (const wallet of wallets) {
       const token = tokens[wallet];
       const startToday = startTodayMap[wallet] ?? 0;
-      let localEarned = 0; // นับเฉพาะรอบนี้
-      const batch: Promise<void>[] = [];
+      let localEarned = 0;
 
-      for (let i = 0; i < bursts; i++) {
-        // หยุดทันทีถ้าถึง cap: startToday + localEarned
+      // 🔥 คำนวณจำนวนช็อตที่เหลือตามแต้มที่ขาดอยู่
+      let remainingShots = bursts;
+      if (stopAtCap) {
+        const need = Math.max(0, DAILY_CAP - startToday);
+        remainingShots = Math.min(bursts, Math.ceil(need / amount));
+      }
+
+      const batch: Promise<void>[] = [];
+      for (let i = 0; i < remainingShots; i++) {
         if (stopAtCap && startToday + localEarned >= DAILY_CAP) break;
 
         const delay = minDelayMs + Math.floor(Math.random() * Math.max(1, jitterMs));
@@ -189,7 +191,6 @@ export async function POST(req: Request) {
         });
 
         batch.push(task);
-
         if (batch.length >= concurrency) {
           await Promise.allSettled(batch);
           batch.length = 0;
@@ -198,8 +199,6 @@ export async function POST(req: Request) {
       }
 
       if (batch.length) await Promise.allSettled(batch);
-
-      // แสดงผลเป็น "แต้มวันนี้หลังจบ" เพื่อไม่สับสนกับ balance รวม
       summary.perWalletBalance[wallet] = startToday + localEarned;
     }
 
