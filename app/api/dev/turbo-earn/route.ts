@@ -1,185 +1,159 @@
 // app/api/dev/turbo-earn/route.ts
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
+import { z } from "zod";
 
-const API = process.env.SOLINK_API_URL || "https://api-solink.network";
-const DAILY_CAP = Number(process.env.POINTS_DAILY_CAP || 2000);
+const schema = z.object({
+  wallets: z.array(z.string()).min(1),
+  type: z.enum(["extension_farm", "referral_bonus"]),
+  amount: z.number().min(1),
+  bursts: z.number().min(1).max(200),
+  concurrency: z.number().min(1).max(10),
+  minDelayMs: z.number().default(300),
+  jitterMs: z.number().default(200),
+  stopAtCap: z.boolean().default(false),
+});
 
-type EarnType = "extension_farm" | "referral_bonus";
+// 🔧 API endpoint ที่ยิงไปยัง Solink API จริง
+const API_BASE = process.env.SOLINK_API_URL || "https://api-solink.network";
+const DEV_SECRET = process.env.DEV_SECRET || "demo_secret_key";
 
-async function demoLogin(wallet: string) {
-  const r = await fetch(`${API}/api/auth/demo-login`, {
+// Helper: หน่วงเวลา
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// 🔁 ระบบ retry/backoff เมื่อเจอ rate-limit (429)
+const MAX_RETRIES = 5;
+const BASE_BACKOFF = 300; // ms
+async function fireEarnWithRetry(
+  token: string,
+  type: string,
+  amount: number,
+  meta: Record<string, any>
+) {
+  let attempt = 0;
+  while (true) {
+    const resp = await fireEarn(token, type, amount, meta);
+
+    // สำเร็จหรือไม่ควร retry → คืนเลย
+    if (resp.ok || resp.status !== 429 || attempt >= MAX_RETRIES) return resp;
+
+    // 429 → backoff แบบ exponential + jitter
+    const wait = BASE_BACKOFF * Math.pow(2, attempt) + Math.floor(Math.random() * 300);
+    console.warn(`[Backoff] 429 detected, retry #${attempt + 1} after ${wait}ms`);
+    await sleep(wait);
+    attempt++;
+  }
+}
+
+// ยิง event จริงไปที่ API
+async function fireEarn(
+  token: string,
+  type: string,
+  amount: number,
+  meta: Record<string, any>
+) {
+  try {
+    const r = await fetch(`${API_BASE}/api/points/earn`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ type, amount, meta }),
+    });
+
+    const body = await r.json().catch(() => ({}));
+    return { ok: r.ok, status: r.status, body };
+  } catch (err: any) {
+    return { ok: false, status: 500, body: { error: err?.message || "Network error" } };
+  }
+}
+
+// ขอ token สำหรับแต่ละ wallet
+async function loginWallet(wallet: string) {
+  const r = await fetch(`${API_BASE}/api/auth/demo-login`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ wallet }),
-    cache: "no-store",
   });
-  if (!r.ok) {
-    const txt = await r.text().catch(() => "");
-    throw new Error(`demo-login failed for ${wallet}: ${r.status} ${txt}`);
-  }
-  const j = await r.json();
-  return j.token as string;
+  const data = await r.json();
+  return data?.token || null;
 }
 
-async function getCurrentBalance(token: string) {
-  // NOTE: adjust upstream path here if your API uses different summary endpoint
-  const r = await fetch(`${API}/api/users/me/summary`, {
-    headers: { Authorization: `Bearer ${token}` },
-    cache: "no-store",
-  });
-  if (!r.ok) return null;
+/* ===================================================================== */
+export async function POST(req: Request) {
   try {
-    return await r.json();
-  } catch {
-    return null;
-  }
-}
+    const json = await req.json();
+    const input = schema.parse(json);
 
-function sleep(ms: number) {
-  return new Promise((res) => setTimeout(res, ms));
-}
+    const { wallets, type, amount, bursts, concurrency, minDelayMs, jitterMs, stopAtCap } = input;
 
-async function fireEarn(token: string, type: EarnType, amount: number, meta: any) {
-  const payload = {
-    type,
-    amount,
-    meta: {
-      ...meta,
-      session: meta?.session ?? `dash-${Date.now()}-${Math.random().toString(36).slice(2,6)}`,
-      nonce: `dash-${Date.now()}-${Math.random().toString(36).slice(2,8)}`,
-    },
-  };
-  const r = await fetch(`${API}/api/points/earn`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-    cache: "no-store",
-  });
-  const text = await r.text();
-  let body: any = {};
-  try { body = JSON.parse(text); } catch { body = { raw: text }; }
-  return { ok: r.ok && body?.ok, status: r.status, body, payload };
-}
-
-export async function POST(req: NextRequest) {
-  try {
-    const body = await req.json().catch(() => ({}));
-    const {
-      wallets = ["demo_wallet"],
-      type = "extension_farm",
-      amount = 50,
-      bursts = 40,
-      concurrency = 5,
-      minDelayMs = 150,
-      jitterMs = 100,
-      stopAtCap = true,
-      meta: baseMeta = {},
-    } = body || {};
-
-    if (!Array.isArray(wallets) || wallets.length === 0) {
-      return NextResponse.json({ ok: false, error: "wallets[] required" }, { status: 400 });
+    // login wallets
+    const tokens: Record<string, string> = {};
+    for (const w of wallets) {
+      const t = await loginWallet(w);
+      if (!t) throw new Error(`Cannot login wallet ${w}`);
+      tokens[w] = t;
     }
 
-    // login all wallets (parallel)
-    const tokens: string[] = await Promise.all(
-      wallets.map(async (w: string) => {
-        const t = await demoLogin(w);
-        return t;
-      })
-    );
+    // main queue
+    const summary: any = {
+      wallets,
+      type,
+      amountPerShot: amount,
+      bursts,
+      concurrency,
+      perWalletBalance: {},
+      totalEarned: 0,
+      dailyCap: 2000,
+    };
 
-    const results: any[] = [];
-    const perWalletBalance: Record<string, number> = {};
+    const samples: any[] = [];
+    const queue: Promise<void>[] = [];
 
-    // helper per-wallet runner with internal concurrency
-    async function runForWallet(wallet: string, token: string) {
-      perWalletBalance[wallet] = 0;
+    for (const wallet of wallets) {
+      const token = tokens[wallet];
+      let balance = 0;
+      for (let i = 0; i < bursts; i++) {
+        // random delay
+        const delay = minDelayMs + Math.floor(Math.random() * jitterMs);
+        await sleep(delay);
 
-      // check current balance (upstream)
-      const summary = await getCurrentBalance(token);
-      const currentBalance = summary?.balance ?? 0;
-      perWalletBalance[wallet] = Number(currentBalance);
-
-      // if stopAtCap and already at/over cap -> skip
-      if (stopAtCap && perWalletBalance[wallet] >= DAILY_CAP) {
-        results.push({ wallet, skipped: true, reason: "already_at_cap", currentBalance });
-        return;
-      }
-
-      // prepare queue (bursts)
-      const queue = Array.from({ length: bursts }, (_, i) => i);
-      let active = 0;
-      let idx = 0;
-
-      return new Promise<void>((resolve) => {
-        const tick = async () => {
-          if (idx >= queue.length) {
-            if (active === 0) resolve();
-            return;
-          }
-          while (active < concurrency && idx < queue.length) {
-            const n = queue[idx++];
-            active++;
-            (async () => {
-              try {
-                // stop if reached cap
-                if (stopAtCap && perWalletBalance[wallet] >= DAILY_CAP) {
-                  results.push({ wallet, stoppedAtCap: true, currentBalance: perWalletBalance[wallet] });
-                  active--; tick();
-                  return;
-                }
-
-                // build meta for this shot
-                const meta = { ...baseMeta };
-                if (type === "referral_bonus" && !meta.referredUserId) {
-                  meta.referredUserId = `user_${wallets[0] || "ref"}`;
-                }
-
-                const resp = await fireEarn(token, type as EarnType, amount, meta);
-                results.push({ wallet, shot: n, resp });
-
-                if (resp.ok && resp.body?.event?.amount) {
-                  perWalletBalance[wallet] += Number(resp.body.event.amount) || 0;
-                } else if (resp.body?.deduped) {
-                  // deduped: no increase
-                }
-
-                // small delay with jitter
-                const delay = minDelayMs + Math.floor(Math.random() * jitterMs);
-                await sleep(delay);
-              } catch (err: any) {
-                results.push({ wallet, error: String(err?.message || err) });
-              } finally {
-                active--; tick();
-              }
-            })();
-          }
+        const meta = {
+          session: `dash-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+          nonce: `dash-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
         };
-        tick();
-      });
+
+        const p = fireEarnWithRetry(token, type, amount, meta).then((resp) => {
+          if (resp.ok && resp.body?.ok) {
+            balance = resp.body.balance ?? balance + amount;
+            summary.perWalletBalance[wallet] = balance;
+            summary.totalEarned += amount;
+          }
+          samples.push({ wallet, shot: i, resp });
+        });
+
+        queue.push(p);
+
+        // ควบคุม concurrency
+        if (queue.length >= concurrency) {
+          await Promise.race(queue);
+          for (let j = queue.length - 1; j >= 0; j--) {
+            if (queue[j].resolved) queue.splice(j, 1);
+          }
+        }
+
+        // หยุดถ้าถึง daily cap
+        if (stopAtCap && balance >= summary.dailyCap) break;
+      }
     }
 
-    // run all wallets in parallel (each manages its own internal concurrency)
-    await Promise.all(wallets.map((w: string, i: number) => runForWallet(w, tokens[i])));
+    await Promise.all(queue);
 
-    const total = Object.values(perWalletBalance).reduce((a, b) => a + Number(b || 0), 0);
-
-    return NextResponse.json({
-      ok: true,
-      summary: {
-        wallets,
-        type,
-        amountPerShot: amount,
-        bursts,
-        concurrency,
-        perWalletBalance,
-        totalEarned: total,
-        dailyCap: DAILY_CAP,
-      },
-      // include last 20 samples for quick inspection
-      samples: results.slice(-20),
-    });
-  } catch (e: any) {
-    return NextResponse.json({ ok: false, error: e?.message || "unexpected error" }, { status: 500 });
+    return NextResponse.json({ ok: true, summary, samples });
+  } catch (err: any) {
+    console.error("turbo-earn error", err);
+    return NextResponse.json({ ok: false, error: err.message || "Invalid input" }, { status: 400 });
   }
 }
