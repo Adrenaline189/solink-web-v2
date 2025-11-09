@@ -23,11 +23,7 @@ const DAILY_CAP = 2000;
 /* ========================= Helpers ========================= */
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-type FireResp = {
-  ok: boolean;
-  status: number;
-  body: any;
-};
+type FireResp = { ok: boolean; status: number; body: any };
 
 async function fireEarn(
   token: string,
@@ -38,10 +34,7 @@ async function fireEarn(
   try {
     const r = await fetch(`${API_BASE}/api/points/earn`, {
       method: "POST",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
-      },
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
       body: JSON.stringify({ type, amount, meta }),
     });
     const body = await r.json().catch(() => ({}));
@@ -66,14 +59,13 @@ async function fireEarnWithRetry(
     if (resp.ok || resp.status !== 429 || attempt >= MAX_RETRIES) return resp;
 
     const wait = BASE_BACKOFF * Math.pow(2, attempt) + Math.floor(Math.random() * 300);
-    // eslint-disable-next-line no-console
     console.warn(`[turbo-earn] 429 rate-limited. retry #${attempt + 1} in ${wait}ms`);
     await sleep(wait);
     attempt++;
   }
 }
 
-/* ---------- ขอ demo token ต่อกระเป๋า ---------- */
+/* ---------- auth & summary (ดึงแต้มวันนี้) ---------- */
 async function loginWallet(wallet: string): Promise<string | null> {
   try {
     const r = await fetch(`${API_BASE}/api/auth/demo-login`, {
@@ -88,35 +80,64 @@ async function loginWallet(wallet: string): Promise<string | null> {
   }
 }
 
+async function fetchPointsToday(token: string): Promise<number> {
+  // พยายามหลาย path ตามที่ backend อาจตั้งไว้ต่างกัน
+  const paths = [
+    "/api/users/me/summary",
+    "/api/dashboard/summary",
+    "/api/points/summary",
+  ];
+  for (const p of paths) {
+    try {
+      const r = await fetch(`${API_BASE}${p}`, {
+        headers: { Authorization: `Bearer ${token}` },
+        cache: "no-store",
+      });
+      if (!r.ok) continue;
+      const j = await r.json().catch(() => ({}));
+      // ค่าที่มักพบ: pointsToday หรือ todayPoints หรือ daily.points
+      const candidates = [
+        j?.pointsToday,
+        j?.todayPoints,
+        j?.daily?.points,
+        j?.today?.points,
+      ];
+      const found = candidates.find((v) => typeof v === "number");
+      if (typeof found === "number") return found;
+    } catch {
+      // try next
+    }
+  }
+  return 0; // ถ้าหาไม่เจอ ให้ถือว่าเริ่ม 0 เพื่อไม่บล็อกการทดสอบ
+}
+
 /* ========================= Route Handler ========================= */
 export async function POST(req: Request) {
   try {
     const body = await req.json();
     const input = BodySchema.parse(body);
 
-    const {
-      wallets,
-      type,
-      amount,
-      bursts,
-      concurrency,
-      minDelayMs,
-      jitterMs,
-      stopAtCap,
-    } = input;
+    const { wallets, type, amount, bursts, concurrency, minDelayMs, jitterMs, stopAtCap } = input;
 
     // login ทุก wallet
     const tokens: Record<string, string> = {};
     for (const w of wallets) {
       const t = await loginWallet(w);
       if (!t) {
-        return NextResponse.json(
-          { ok: false, error: `Cannot login wallet ${w}` },
-          { status: 401 }
-        );
+        return NextResponse.json({ ok: false, error: `Cannot login wallet ${w}` }, { status: 401 });
       }
       tokens[w] = t;
     }
+
+    // อ่านแต้มวันนี้ก่อนเริ่ม (ต่อกระเป๋า)
+    const startTodayMap: Record<string, number> = {};
+    await Promise.all(
+      wallets.map(async (w) => {
+        const token = tokens[w];
+        const pts = await fetchPointsToday(token).catch(() => 0);
+        startTodayMap[w] = pts || 0;
+      })
+    );
 
     const summary: {
       wallets: string[];
@@ -124,8 +145,8 @@ export async function POST(req: Request) {
       amountPerShot: number;
       bursts: number;
       concurrency: number;
-      perWalletBalance: Record<string, number>;
-      totalEarned: number;
+      perWalletBalance: Record<string, number>; // แสดง "แต้มวันนี้หลังจบ" (startToday + localEarned)
+      totalEarned: number; // รวมเฉพาะที่ยิงรอบนี้สำเร็จ
       dailyCap: number;
     } = {
       wallets,
@@ -138,24 +159,19 @@ export async function POST(req: Request) {
       dailyCap: DAILY_CAP,
     };
 
-    const samples: Array<{
-      wallet: string;
-      shot: number;
-      resp: FireResp;
-    }> = [];
+    const samples: Array<{ wallet: string; shot: number; resp: FireResp }> = [];
 
     /* ---------- ยิงเป็น wallet ๆ พร้อมคุม concurrency ด้วย batch ---------- */
     for (const wallet of wallets) {
       const token = tokens[wallet];
-      let balance = 0;
-
+      const startToday = startTodayMap[wallet] ?? 0;
+      let localEarned = 0; // นับเฉพาะรอบนี้
       const batch: Promise<void>[] = [];
 
       for (let i = 0; i < bursts; i++) {
-        // หากเปิด stopAtCap และยอดถึงแล้ว ให้หยุด wallet นี้ทันที
-        if (stopAtCap && balance >= DAILY_CAP) break;
+        // หยุดทันทีถ้าถึง cap: startToday + localEarned
+        if (stopAtCap && startToday + localEarned >= DAILY_CAP) break;
 
-        // สุ่ม delay ต่อช็อต
         const delay = minDelayMs + Math.floor(Math.random() * Math.max(1, jitterMs));
         await sleep(delay);
 
@@ -166,9 +182,7 @@ export async function POST(req: Request) {
 
         const task = fireEarnWithRetry(token, type, amount, meta).then((resp) => {
           if (resp.ok && resp.body?.ok) {
-            // หากปลายทางส่ง balance มากับ body ใช้ค่านั้น, ไม่งั้นบวกแบบคาดการณ์
-            balance = typeof resp.body?.balance === "number" ? resp.body.balance : balance + amount;
-            summary.perWalletBalance[wallet] = balance;
+            localEarned += amount;
             summary.totalEarned += amount;
           }
           samples.push({ wallet, shot: i, resp });
@@ -176,25 +190,21 @@ export async function POST(req: Request) {
 
         batch.push(task);
 
-        // ถึง concurrency → รอ batch นี้เสร็จทั้งหมดก่อนคิวต่อไป
         if (batch.length >= concurrency) {
           await Promise.allSettled(batch);
           batch.length = 0;
-
-          // หลังจบ batch เช็ค cap อีกครั้ง
-          if (stopAtCap && balance >= DAILY_CAP) break;
+          if (stopAtCap && startToday + localEarned >= DAILY_CAP) break;
         }
       }
 
-      // รอ batch สุดท้ายของ wallet นี้
-      if (batch.length) {
-        await Promise.allSettled(batch);
-      }
+      if (batch.length) await Promise.allSettled(batch);
+
+      // แสดงผลเป็น "แต้มวันนี้หลังจบ" เพื่อไม่สับสนกับ balance รวม
+      summary.perWalletBalance[wallet] = startToday + localEarned;
     }
 
     return NextResponse.json({ ok: true, summary, samples });
   } catch (err: any) {
-    // eslint-disable-next-line no-console
     console.error("[turbo-earn] error:", err);
     const msg =
       err?.message || (Array.isArray(err?.issues) ? JSON.stringify(err.issues) : "Invalid input");
