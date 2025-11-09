@@ -3,29 +3,31 @@
   "farmType": "extension_farm",
   "amountPerShot": 50,
 
-  "bursts": 20,                      // แบ่งรอบเป็นก้อนเล็ก 2x20 แทน 40 รวดเดียว
-  "concurrency": 3,                  // ลดจาก 5 -> 3 ช่วยลด 429 ได้เยอะ
-  "pauseMsBetweenShots": 180,        // ขยับจาก 120 -> 180ms
-  "gapMsBetweenBursts": 5000,        // (ใหม่) พัก 5s ระหว่างก้อน เพื่อรีเซ็ต window ของ rate limit
+  "bursts": 20,                     // แบ่งเป็นก้อนเล็ก 2x20 แทนยิง 40 รวดเดียว
+  "concurrency": 3,                 // ลดจาก 5 -> 3
+  "pauseMsBetweenShots": 200,       // จาก 120 -> 200ms (จังหวะช้าลงนิดเดียว แต่เสถียรขึ้น)
+  "gapMsBetweenBursts": 5000,       // พัก 5s ระหว่างก้อน เพื่อลดโอกาสชน window
 
   "dailyCap": 2000,
+
   "wallets": [
-    { "wallet": "demo_wallet_test1" }
+    { "wallet": "demo_wallet_test1" },
+    { "wallet": "demo_wallet_test2", "token": "PUT_JWT_TOKEN_HERE" } // เติม token ที่ถูกต้อง (ดูข้อ 2)
   ],
 
   "metaPrefix": "dash",
-  "maxRetries": 8,                   // เผื่อไว้สำหรับ 429/500
-  "backoffBaseMs": 800,              // เพิ่มฐาน backoff
-  "backoffJitterMs": 400,            // เพิ่ม jitter ให้กระจายจังหวะ
+  "maxRetries": 8,
+  "backoffBaseMs": 800,
+  "backoffJitterMs": 400,
   "stopWhenAllDone": true,
 
-  "adaptiveMode": true,              // (ใหม่) เปิดโหมดปรับจังหวะอัตโนมัติ
+  "adaptiveMode": true,
   "adaptive": {
-    "windowSize": 20,                // ส่องผลล่าสุด 20 ช็อต
-    "high429Ratio": 0.2,             // ถ้า 429 เกิน 20% ในหน้าต่าง -> ผ่อนคันเร่ง
-    "cooldownMs": 2000,              // หลังเจอ 429 รัว ๆ ให้พัก 2s
-    "minPause": 120,                 // ขอบล่างของ pace
-    "maxPause": 350,                 // ขอบบนของ pace
-    "step": 20                       // ปรับขึ้น/ลงครั้งละ 20ms
+    "windowSize": 20,
+    "high429Ratio": 0.2,            // ถ้า 429 เกิน 20% ของหน้าต่าง → ผ่อนคันเร่ง
+    "cooldownMs": 2000,
+    "minPause": 150,
+    "maxPause": 350,
+    "step": 20
   }
 }
