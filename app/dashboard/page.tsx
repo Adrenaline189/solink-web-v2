@@ -130,6 +130,11 @@ function DashboardInner() {
           </div>
         </div>
 
+        {/* Developer Test */}
+        <div className="mb-6">
+          <EarnTester />
+        </div>
+
         {/* KPI Cards */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
           <KPI
@@ -161,17 +166,6 @@ function DashboardInner() {
             loading={loading}
           />
         </div>
-
-export default function DashboardPage() {
-  return (
-    <div className="space-y-6">
-      {/* ...ของเดิม... */}
-
-      {/* Developer Test */}
-      <EarnTester />
-    </div>
-  );
-}
 
         {/* Charts + Quality Panel */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
@@ -414,17 +408,34 @@ function RangeRadios({
 function DashboardGlobalStyles() {
   return (
     <style jsx global>{`
+      /* Progress meter width steps */
       .mw-0 { width: 0% } .mw-5 { width: 5% } .mw-10 { width: 10% } .mw-15 { width: 15% }
       .mw-20 { width: 20% } .mw-25 { width: 25% } .mw-30 { width: 30% } .mw-35 { width: 35% }
       .mw-40 { width: 40% } .mw-45 { width: 45% } .mw-50 { width: 50% } .mw-55 { width: 55% }
       .mw-60 { width: 60% } .mw-65 { width: 65% } .mw-70 { width: 70% } .mw-75 { width: 75% }
       .mw-80 { width: 80% } .mw-85 { width: 85% } .mw-90 { width: 90% } .mw-95 { width: 95% }
       .mw-100 { width: 100% }
+
+      /* Make WalletMultiButton match Start Sharing button when wrapped in .wa-equal */
+      .wa-equal .wallet-adapter-button {
+        height: 3rem;               /* h-12 */
+        padding: 0 1.25rem;         /* px-5 */
+        border-radius: 1rem;        /* rounded-2xl */
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;                /* icon spacing */
+        font-size: 0.875rem;        /* text-sm */
+        line-height: 1;             /* avoid vertical jitter */
+      }
+      .wa-equal .wallet-adapter-button .wallet-adapter-button-start-icon,
+      .wa-equal .wallet-adapter-button .wallet-adapter-button-end-icon {
+        width: 1rem; height: 1rem;  /* h-4 w-4 */
+      }
     `}</style>
   );
 }
 
-export default function Dashboard() {
+export default function DashboardPage() {
   return (
     <>
       <Suspense fallback={<div className="p-6 text-slate-400">Loading…</div>}>
