@@ -12,7 +12,7 @@
 
   "wallets": [
     { "wallet": "demo_wallet_test1" },
-    { "wallet": "demo_wallet_test2", "token": "PUT_JWT_TOKEN_HERE" } // เติม token ที่ถูกต้อง (ดูข้อ 2)
+    { "wallet": "demo_wallet_test2", "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJkZW1vX3dhbGxldF90ZXN0Iiwid2FsbGV0IjoiZGVtb193YWxsZXRfdGVzdDIiLCJpYXQiOjE3NjI3MDkyMjMsImV4cCI6MTc2MzMxNDAyM30.lL-rXZAZy32r3b1Vmk-u_Zr-GWiBmkL-J_zrAVzFQvc" } // เติม token ที่ถูกต้อง (ดูข้อ 2)
   ],
 
   "metaPrefix": "dash",
