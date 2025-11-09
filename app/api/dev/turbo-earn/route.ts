@@ -2,57 +2,39 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
-const schema = z.object({
-  wallets: z.array(z.string()).min(1),
+/* ========================= Input Schema ========================= */
+const BodySchema = z.object({
+  wallets: z.array(z.string().min(1)).min(1),
   type: z.enum(["extension_farm", "referral_bonus"]),
-  amount: z.number().min(1),
-  bursts: z.number().min(1).max(200),
-  concurrency: z.number().min(1).max(10),
-  minDelayMs: z.number().default(300),
-  jitterMs: z.number().default(200),
-  stopAtCap: z.boolean().default(false),
+  amount: z.number().int().min(1),
+  bursts: z.number().int().min(1).max(200),
+  concurrency: z.number().int().min(1).max(10),
+  minDelayMs: z.number().int().min(0).default(300),
+  jitterMs: z.number().int().min(0).default(200),
+  stopAtCap: z.boolean().default(true),
 });
 
-// 🔧 API endpoint ที่ยิงไปยัง Solink API จริง
+type EarnType = z.infer<typeof BodySchema>["type"];
+
+/* ========================= Config ========================= */
 const API_BASE = process.env.SOLINK_API_URL || "https://api-solink.network";
-const DEV_SECRET = process.env.DEV_SECRET || "demo_secret_key";
+const DAILY_CAP = 2000;
 
-// Helper: หน่วงเวลา
-function sleep(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
+/* ========================= Helpers ========================= */
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-// 🔁 ระบบ retry/backoff เมื่อเจอ rate-limit (429)
-const MAX_RETRIES = 5;
-const BASE_BACKOFF = 300; // ms
-async function fireEarnWithRetry(
-  token: string,
-  type: string,
-  amount: number,
-  meta: Record<string, any>
-) {
-  let attempt = 0;
-  while (true) {
-    const resp = await fireEarn(token, type, amount, meta);
+type FireResp = {
+  ok: boolean;
+  status: number;
+  body: any;
+};
 
-    // สำเร็จหรือไม่ควร retry → คืนเลย
-    if (resp.ok || resp.status !== 429 || attempt >= MAX_RETRIES) return resp;
-
-    // 429 → backoff แบบ exponential + jitter
-    const wait = BASE_BACKOFF * Math.pow(2, attempt) + Math.floor(Math.random() * 300);
-    console.warn(`[Backoff] 429 detected, retry #${attempt + 1} after ${wait}ms`);
-    await sleep(wait);
-    attempt++;
-  }
-}
-
-// ยิง event จริงไปที่ API
 async function fireEarn(
   token: string,
-  type: string,
+  type: EarnType,
   amount: number,
   meta: Record<string, any>
-) {
+): Promise<FireResp> {
   try {
     const r = await fetch(`${API_BASE}/api/points/earn`, {
       method: "POST",
@@ -62,43 +44,90 @@ async function fireEarn(
       },
       body: JSON.stringify({ type, amount, meta }),
     });
-
     const body = await r.json().catch(() => ({}));
     return { ok: r.ok, status: r.status, body };
-  } catch (err: any) {
-    return { ok: false, status: 500, body: { error: err?.message || "Network error" } };
+  } catch (e: any) {
+    return { ok: false, status: 500, body: { error: e?.message || "Network error" } };
   }
 }
 
-// ขอ token สำหรับแต่ละ wallet
-async function loginWallet(wallet: string) {
-  const r = await fetch(`${API_BASE}/api/auth/demo-login`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ wallet }),
-  });
-  const data = await r.json();
-  return data?.token || null;
+/* ---------- retry + exponential backoff เมื่อโดน 429 ---------- */
+const MAX_RETRIES = 5;
+const BASE_BACKOFF = 300; // ms
+async function fireEarnWithRetry(
+  token: string,
+  type: EarnType,
+  amount: number,
+  meta: Record<string, any>
+): Promise<FireResp> {
+  let attempt = 0;
+  while (true) {
+    const resp = await fireEarn(token, type, amount, meta);
+    if (resp.ok || resp.status !== 429 || attempt >= MAX_RETRIES) return resp;
+
+    const wait = BASE_BACKOFF * Math.pow(2, attempt) + Math.floor(Math.random() * 300);
+    // eslint-disable-next-line no-console
+    console.warn(`[turbo-earn] 429 rate-limited. retry #${attempt + 1} in ${wait}ms`);
+    await sleep(wait);
+    attempt++;
+  }
 }
 
-/* ===================================================================== */
+/* ---------- ขอ demo token ต่อกระเป๋า ---------- */
+async function loginWallet(wallet: string): Promise<string | null> {
+  try {
+    const r = await fetch(`${API_BASE}/api/auth/demo-login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ wallet }),
+    });
+    const data = await r.json().catch(() => ({}));
+    return data?.token ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/* ========================= Route Handler ========================= */
 export async function POST(req: Request) {
   try {
-    const json = await req.json();
-    const input = schema.parse(json);
+    const body = await req.json();
+    const input = BodySchema.parse(body);
 
-    const { wallets, type, amount, bursts, concurrency, minDelayMs, jitterMs, stopAtCap } = input;
+    const {
+      wallets,
+      type,
+      amount,
+      bursts,
+      concurrency,
+      minDelayMs,
+      jitterMs,
+      stopAtCap,
+    } = input;
 
-    // login wallets
+    // login ทุก wallet
     const tokens: Record<string, string> = {};
     for (const w of wallets) {
       const t = await loginWallet(w);
-      if (!t) throw new Error(`Cannot login wallet ${w}`);
+      if (!t) {
+        return NextResponse.json(
+          { ok: false, error: `Cannot login wallet ${w}` },
+          { status: 401 }
+        );
+      }
       tokens[w] = t;
     }
 
-    // main queue
-    const summary: any = {
+    const summary: {
+      wallets: string[];
+      type: EarnType;
+      amountPerShot: number;
+      bursts: number;
+      concurrency: number;
+      perWalletBalance: Record<string, number>;
+      totalEarned: number;
+      dailyCap: number;
+    } = {
       wallets,
       type,
       amountPerShot: amount,
@@ -106,18 +135,28 @@ export async function POST(req: Request) {
       concurrency,
       perWalletBalance: {},
       totalEarned: 0,
-      dailyCap: 2000,
+      dailyCap: DAILY_CAP,
     };
 
-    const samples: any[] = [];
-    const queue: Promise<void>[] = [];
+    const samples: Array<{
+      wallet: string;
+      shot: number;
+      resp: FireResp;
+    }> = [];
 
+    /* ---------- ยิงเป็น wallet ๆ พร้อมคุม concurrency ด้วย batch ---------- */
     for (const wallet of wallets) {
       const token = tokens[wallet];
       let balance = 0;
+
+      const batch: Promise<void>[] = [];
+
       for (let i = 0; i < bursts; i++) {
-        // random delay
-        const delay = minDelayMs + Math.floor(Math.random() * jitterMs);
+        // หากเปิด stopAtCap และยอดถึงแล้ว ให้หยุด wallet นี้ทันที
+        if (stopAtCap && balance >= DAILY_CAP) break;
+
+        // สุ่ม delay ต่อช็อต
+        const delay = minDelayMs + Math.floor(Math.random() * Math.max(1, jitterMs));
         await sleep(delay);
 
         const meta = {
@@ -125,35 +164,40 @@ export async function POST(req: Request) {
           nonce: `dash-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
         };
 
-        const p = fireEarnWithRetry(token, type, amount, meta).then((resp) => {
+        const task = fireEarnWithRetry(token, type, amount, meta).then((resp) => {
           if (resp.ok && resp.body?.ok) {
-            balance = resp.body.balance ?? balance + amount;
+            // หากปลายทางส่ง balance มากับ body ใช้ค่านั้น, ไม่งั้นบวกแบบคาดการณ์
+            balance = typeof resp.body?.balance === "number" ? resp.body.balance : balance + amount;
             summary.perWalletBalance[wallet] = balance;
             summary.totalEarned += amount;
           }
           samples.push({ wallet, shot: i, resp });
         });
 
-        queue.push(p);
+        batch.push(task);
 
-        // ควบคุม concurrency
-        if (queue.length >= concurrency) {
-          await Promise.race(queue);
-          for (let j = queue.length - 1; j >= 0; j--) {
-            if (queue[j].resolved) queue.splice(j, 1);
-          }
+        // ถึง concurrency → รอ batch นี้เสร็จทั้งหมดก่อนคิวต่อไป
+        if (batch.length >= concurrency) {
+          await Promise.allSettled(batch);
+          batch.length = 0;
+
+          // หลังจบ batch เช็ค cap อีกครั้ง
+          if (stopAtCap && balance >= DAILY_CAP) break;
         }
+      }
 
-        // หยุดถ้าถึง daily cap
-        if (stopAtCap && balance >= summary.dailyCap) break;
+      // รอ batch สุดท้ายของ wallet นี้
+      if (batch.length) {
+        await Promise.allSettled(batch);
       }
     }
 
-    await Promise.all(queue);
-
     return NextResponse.json({ ok: true, summary, samples });
   } catch (err: any) {
-    console.error("turbo-earn error", err);
-    return NextResponse.json({ ok: false, error: err.message || "Invalid input" }, { status: 400 });
+    // eslint-disable-next-line no-console
+    console.error("[turbo-earn] error:", err);
+    const msg =
+      err?.message || (Array.isArray(err?.issues) ? JSON.stringify(err.issues) : "Invalid input");
+    return NextResponse.json({ ok: false, error: msg }, { status: 400 });
   }
 }
