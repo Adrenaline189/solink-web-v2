@@ -8,5 +8,5 @@
   "jitterMs": 400,
   "dailyCap": 2000,
   "apiBase": "https://api-solink.network/api/points/earn",
-  "authToken": "YOUR_BEARER_TOKEN_HERE"
+  "authToken": "/api/auth/demo-login"
 }
