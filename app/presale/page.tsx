@@ -16,37 +16,71 @@ import SolanaConnectButton from "@/components/SolanaConnectButton";
 
 /* ---------- Config: Phases ---------- */
 type Phase = {
-  key: string; label: string; start: string; end: string;
-  priceUsd: number; hardCapUsd: number; softCapUsd?: number;
+  key: string;
+  label: string;
+  start: string;
+  end: string;
+  priceUsd: number;
+  hardCapUsd: number;
+  softCapUsd?: number;
+  percent: number; // เพิ่มฟิลด์ % ตามที่ต้องการ
 };
 
-// Auto pick next year (Bangkok +07:00). Adjust time if needed.
+// Auto pick next year (Bangkok +07:00).
 const YEAR = new Date().getFullYear() + 1;
 const TZ = "+07:00";
 
-// Start: Jan 1 (19:00) — End: Jan 7 (19:00)
-const PRESALE_START = `${YEAR}-01-01T19:00:00${TZ}`;
-const PRESALE_END   = `${YEAR}-01-07T19:00:00${TZ}`;
+/*
+  Schedule (ทุกช่วงเริ่ม 19:00 น.):
+  - Seed:    Jan 1 → Jan 3
+  - Private: Jan 3 → Jan 5
+  - Public:  Jan 5 → Jan 7
+  * สามารถ override เริ่มต้นด้วย NEXT_PUBLIC_PRESALE_START ได้ตามเดิม
+*/
 
 const PHASES: Phase[] = [
   {
-    key: "main",
-    label: "Presale",
-    start: process.env.NEXT_PUBLIC_PRESALE_START ?? PRESALE_START,
-    end: PRESALE_END,
-    priceUsd: 0.020,          
-    hardCapUsd: 1_500_000,   
+    key: "seed",
+    label: "Seed",
+    start: process.env.NEXT_PUBLIC_PRESALE_START ?? `${YEAR}-01-01T19:00:00${TZ}`,
+    end: `${YEAR}-01-03T19:00:00${TZ}`,
+    priceUsd: 0.005,
+    hardCapUsd: 250_000,
+    softCapUsd: 100_000,
+    percent: 5,
+  },
+  {
+    key: "private",
+    label: "Private",
+    start: `${YEAR}-01-03T19:00:00${TZ}`,
+    end: `${YEAR}-01-05T19:00:00${TZ}`,
+    priceUsd: 0.010,
+    hardCapUsd: 500_000,
     softCapUsd: 200_000,
+    percent: 10,
+  },
+  {
+    key: "public",
+    label: "Public",
+    start: `${YEAR}-01-05T19:00:00${TZ}`,
+    end: `${YEAR}-01-07T19:00:00${TZ}`,
+    priceUsd: 0.020,
+    hardCapUsd: 1_000_000,
+    softCapUsd: 300_000,
+    percent: 10,
   },
 ];
 
-
-const SOL_TREASURY = process.env.NEXT_PUBLIC_SOLANA_TREASURY || "11111111111111111111111111111111";
+const SOL_TREASURY =
+  process.env.NEXT_PUBLIC_SOLANA_TREASURY || "11111111111111111111111111111111";
 
 /* Hydration-safe date format */
 const dateFmt = new Intl.DateTimeFormat("en-GB", {
-  dateStyle: "medium", timeStyle: "short",
-  timeZone: "Asia/Bangkok", calendar: "gregory", numberingSystem: "latn",
+  dateStyle: "medium",
+  timeStyle: "short",
+  timeZone: "Asia/Bangkok",
+  calendar: "gregory",
+  numberingSystem: "latn",
 });
 
 /* ---------- Helpers ---------- */
@@ -57,7 +91,13 @@ function Section({ children, className = "" }: React.PropsWithChildren<{ classNa
   const ref = useRef<HTMLDivElement | null>(null);
   const inView = useInView(ref, { once: true, margin: "-80px" });
   return (
-    <motion.section ref={ref} initial={{ opacity: 0, y: 16 }} animate={inView ? { opacity: 1, y: 0 } : {}} transition={{ duration: 0.5 }} className={className}>
+    <motion.section
+      ref={ref}
+      initial={{ opacity: 0, y: 16 }}
+      animate={inView ? { opacity: 1, y: 0 } : {}}
+      transition={{ duration: 0.5 }}
+      className={className}
+    >
       {children}
     </motion.section>
   );
@@ -75,9 +115,17 @@ function useNow() {
 }
 
 function getActivePhase(nowMs: number | null) {
-  const phases = PHASES.map(p => ({ ...p, startMs: new Date(p.start).getTime(), endMs: new Date(p.end).getTime() }));
+  const phases = PHASES.map(p => ({
+    ...p,
+    startMs: new Date(p.start).getTime(),
+    endMs: new Date(p.end).getTime(),
+  }));
   if (nowMs == null) return phases.find(p => Date.now() < p.startMs) || phases[0];
-  return phases.find(p => nowMs >= p.startMs && nowMs < p.endMs) || phases.find(p => nowMs < p.startMs) || phases[phases.length - 1];
+  return (
+    phases.find(p => nowMs >= p.startMs && nowMs < p.endMs) ||
+    phases.find(p => nowMs < p.startMs) ||
+    phases[phases.length - 1]
+  );
 }
 
 function countdown(targetMs: number, nowMs: number | null) {
@@ -195,11 +243,12 @@ export default function PresaleSolanaOnlyPage() {
                 {PHASES.map(p => {
                   const act = p.key === active.key;
                   return (
-                    <span key={p.key}
+                    <span
+                      key={p.key}
                       className={`inline-flex items-center gap-2 rounded-xl border px-3 py-1 text-xs ${act ? "border-white/50 bg-white/10" : "border-white/10 bg-white/5 text-white/70"}`}
                       title={`${p.label}: ${formatDate(new Date(p.start))} → ${formatDate(new Date(p.end))}`}
                     >
-                      {p.label} (${p.priceUsd})
+                      {p.label} {p.percent}% (${p.priceUsd})
                     </span>
                   );
                 })}
@@ -224,11 +273,17 @@ export default function PresaleSolanaOnlyPage() {
               </div>
 
               <div className="mt-5 flex flex-wrap gap-3">
-                <a href={mode === "ended" ? "/tokenomics" : "#participate"} className="inline-flex items-center gap-2 rounded-2xl bg-white text-slate-900 px-5 py-3 text-sm font-semibold hover:bg-white/90 transition">
+                <a
+                  href={mode === "ended" ? "/tokenomics" : "#participate"}
+                  className="inline-flex items-center gap-2 rounded-2xl bg-white text-slate-900 px-5 py-3 text-sm font-semibold hover:bg-white/90 transition"
+                >
                   {mode === "live" ? "Participate Now" : mode === "pre" ? "Get Whitelisted" : "View Tokenomics"}
                   <ArrowRight className="size-4" />
                 </a>
-                <a href="/whitepaper" className="inline-flex items-center gap-2 rounded-2xl border border-white/20 px-5 py-3 text-sm font-semibold hover:bg-white/10 transition">
+                <a
+                  href="/whitepaper"
+                  className="inline-flex items-center gap-2 rounded-2xl border border-white/20 px-5 py-3 text-sm font-semibold hover:bg-white/10 transition"
+                >
                   Read Whitepaper <ExternalLink className="size-4" />
                 </a>
               </div>
@@ -249,7 +304,9 @@ export default function PresaleSolanaOnlyPage() {
             <div className="mt-4 space-y-3">
               <label className="text-sm text-white/70">Contribution (USD)</label>
               <input
-                type="number" min={0} value={contribUSD}
+                type="number"
+                min={0}
+                value={contribUSD}
                 onChange={(e) => setContribUSD(Number(e.target.value || 0))}
                 className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 outline-none focus:ring-2 focus:ring-white/20"
                 placeholder="1000"
