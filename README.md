@@ -1,22 +1,22 @@
+# AutoFarm Scheduler v1.1
 
-## Deploy to Vercel (Step-by-step)
-1) สร้าง repository ใหม่บน GitHub ชื่อเช่น `solink-web`
-2) ในเครื่องคุณรัน:
+## Run modes
+- **DRY-RUN**: `DRY_RUN=1` — no network calls (no login, no earn, no 401/429). Safe to test flow.
+- **LIVE**: default — login (if no token) + earn loops with backoff.
+
+## Quick start
 ```bash
-cd solink-landing-plus-dashboard
-git init
-git add .
-git commit -m "Initial: Landing + Mock Dashboard"
-git branch -M main
-git remote add origin https://github.com/<YOUR_USERNAME>/solink-web.git
-git push -u origin main
-```
-3) ไปที่ https://vercel.com → New Project → Import จาก GitHub → เลือก repo `solink-web`
-4) กด Deploy (ไม่ต้องตั้ง ENV สำหรับเวอร์ชันนี้)
-5) ไปที่ Project → Settings → Domains → ใส่โดเมนของคุณ (เช่น `solink.network` และ `www.solink.network`)
-6) ตั้ง DNS ที่ Cloudflare:
-```
-Type: CNAME   Name: www   Target: cname.vercel-dns.com
-Type: CNAME   Name: @     Target: cname.vercel-dns.com   # ใช้ CNAME flattening
-```
-7) รอ DNS propagate แล้ว https จะขึ้นอัตโนมัติ
+# Install deps if needed
+pnpm i  # or npm i / yarn
+
+# Dry test (no network)
+DRY_RUN=1 npx tsx scripts/autofarm-scheduler.ts
+
+# Live using config wallets
+npx tsx scripts/autofarm-scheduler.ts
+
+# Live, single wallet
+WALLETS=demo_wallet_test2 npx tsx scripts/autofarm-scheduler.ts
+
+# Live, override params
+WALLETS=demo_wallet_test1,demo_wallet_test2 BURSTS=20 CONCURRENCY=2 AMOUNT=50 CAP=2000 npx tsx scripts/autofarm-scheduler.ts
