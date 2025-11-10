@@ -3,11 +3,12 @@ import { NextResponse } from "next/server";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-import { ensureSim, getHourly, type Range } from "@/lib/dev-sim";
+import { ensureSim, getHourly } from "@/lib/dev-sim";
+import type { DashboardRange } from "@/types/dashboard";
 
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
-  const r = (searchParams.get("r") || "today") as Range;
+  const r = (searchParams.get("r") || "today") as DashboardRange;
 
   const cookieHdr = req.headers.get("cookie") || "";
   const sim = /(?:^|;\s*)solink_sim=1(?:;|$)/.test(cookieHdr);
