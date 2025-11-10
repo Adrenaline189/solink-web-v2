@@ -1,6 +1,5 @@
 export type { Range } from "@/types/dashboard";
 import type { DashboardSummary, HourlyPoint, Tx } from "@/types/dashboard";
-export type Range = "today" | "7d" | "30d";
 
 /** Safe JSON fetcher that guards empty body and non-OK responses. */
 async function fetchJSON<T>(url: string, signal?: AbortSignal): Promise<T> {
