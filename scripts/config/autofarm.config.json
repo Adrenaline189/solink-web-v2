@@ -9,7 +9,7 @@
   // รายชื่อกระเป๋า (จะ override ได้ด้วย ENV: WALLETS="demo_wallet_test1,demo_wallet_test2")
   "wallets": [
     { "wallet": "demo_wallet_test1" },
-    { "wallet": "demo_wallet_test2", "token": "STATIC_JWT_TOKEN_IF_YOU_HAVE" }
+    { "wallet": "demo_wallet_test2"}
   ],
 
   // ตั้งค่า rate limit + jitter
