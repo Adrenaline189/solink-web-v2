@@ -27,6 +27,13 @@
 
     "plugins": [{ "name": "next" }]
   },
-  "include": ["next-env.d.ts", "app/**/*", "components/**/*", "lib/**/*", "**/*.tsx", ".next/types/**/*.ts"],
+  "include": [
+    "next-env.d.ts",
+    "app/**/*",
+    "components/**/*",
+    "lib/**/*",
+    "**/*.tsx",
+    ".next/types/**/*.ts"
+  ],
   "exclude": ["node_modules", ".next", "scripts/**/*"]
 }
