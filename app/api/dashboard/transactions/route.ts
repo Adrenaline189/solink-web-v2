@@ -1,13 +1,13 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import type { Range } from "@/lib/data/dashboard";
+import type { Range } from "@/types/dashboard";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
-    const _range = (searchParams.get("range") as Range) || "today";
+    const _range = (searchParams.get("range") as DashboardRange) || "today";
 
     const rows = await prisma.pointEvent.findMany({
       orderBy: { createdAt: "desc" },
