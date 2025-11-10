@@ -6,7 +6,7 @@
     "dev": "next dev",
     "seed:demo": "tsx scripts/seed-demo.ts",
     "build": "next build",
-    "vercel-build": "prisma migrate deploy && next build",
+    "vercel-build": "node scripts/skip-migrate-on-vercel.cjs && next build",
     "start": "next start",
     "lint": "next lint",
     "lint:fix": "next lint --fix",
@@ -58,7 +58,7 @@
     "typescript": "^5.9.2"
   },
   "engines": {
-    "node": "22.x"
+    "node": "20.x"
   },
   "packageManager": "npm@10.0.0"
 }
