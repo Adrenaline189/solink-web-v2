@@ -84,13 +84,13 @@ export function getSummary(): DashboardSummary {
   return state.summary;
 }
 
-export function getTx(_range: Range = "today"): Tx[] {
+export function getTx(_range: DashboardRange = "today"): Tx[] {
   initIfNeeded();
   // demo: return a single shared set
   return state.tx;
 }
 
-export function getHourly(range: Range = "today"): HourlyPoint[] {
+export function getHourly(range: DashboardRange = "today"): HourlyPoint[] {
   initIfNeeded();
   if (range === "today") return state.hourly;
 
