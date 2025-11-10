@@ -1,0 +1,91 @@
+{
+  // Package metadata
+  "name": "solink-landing-plus-dashboard",
+  "private": true,
+  "version": "0.1.0",
+
+  "scripts": {
+    // Local development
+    "dev": "next dev",
+
+    // Demo seed script (keep as-is)
+    "seed:demo": "tsx scripts/seed-demo.ts",
+
+    // Standard build (not used by Vercel, but useful elsewhere)
+    "build": "next build",
+
+    // IMPORTANT: On Vercel, DO NOT run Prisma migrations during build.
+    // This avoids Prisma P1002 (advisory lock timeout) against Neon/pgBouncer.
+    // We run a small helper script that prints context then proceed to Next build.
+    "vercel-build": "node scripts/skip-migrate-on-vercel.cjs && next build",
+
+    // Production start (Next standalone or Node server)
+    "start": "next start",
+
+    // Quality gates
+    "lint": "next lint",
+    "lint:fix": "next lint --fix",
+    "format": "prettier --write \"{app,components,lib,types}/**/*.{ts,tsx,js,jsx,json,css,md}\"",
+    "format:check": "prettier --check \"{app,components,lib,types}/**/*.{ts,tsx,js,jsx,json,css,md}\"",
+    "type-check": "tsc -p tsconfig.json --noEmit",
+    "ci:verify": "npm run lint && npm run type-check && npm run build",
+
+    // Prisma helpers
+    "prisma:generate": "prisma generate",
+    "prisma:migrate": "prisma migrate deploy",
+
+    // Generate Prisma Client after install. This is safe on Vercel.
+    "postinstall": "prisma generate || echo \"skip prisma generate\""
+  },
+
+  // Runtime deps
+  "dependencies": {
+    "@prisma/client": "^5.22.0",
+    "@rainbow-me/rainbowkit": "^2.2.8",
+    "@solana/wallet-adapter-backpack": "^0.1.14",
+    "@solana/wallet-adapter-base": "^0.9.27",
+    "@solana/wallet-adapter-phantom": "^0.9.28",
+    "@solana/wallet-adapter-react": "^0.15.39",
+    "@solana/wallet-adapter-react-ui": "^0.9.39",
+    "@solana/wallet-adapter-solflare": "^0.6.32",
+    "@solana/wallet-adapter-wallets": "^0.19.37",
+    "@solana/web3.js": "^1.98.4",
+    "@tanstack/react-query": "^5.85.9",
+    "@vercel/analytics": "^1.5.0",
+    "@vercel/speed-insights": "^1.2.0",
+    "autoprefixer": "^10.4.16",
+    "framer-motion": "^12.23.12",
+    "lucide-react": "^0.439.0",
+    "next": "14.2.5",
+    "nodemailer": "^7.0.5",
+    "postcss": "^8.4.33",
+    "react": "18.2.0",
+    "react-dom": "18.2.0",
+    "recharts": "^2.15.4",
+    "tailwindcss": "^3.4.7",
+    "viem": "^2.37.2",
+    "wagmi": "^2.16.9"
+  },
+
+  // Dev-only deps
+  "devDependencies": {
+    "@types/node": "^20.12.7",
+    "@types/nodemailer": "^7.0.1",
+    "@types/react": "^18.2.67",
+    "@types/react-dom": "^18.2.22",
+    "eslint": "^8.57.0",
+    "eslint-config-next": "14.2.5",
+    "prettier": "^3.6.2",
+    "prisma": "^5.22.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.9.2"
+  },
+
+  // Pin Node to 20.x to match Vercel & CI environment and avoid ABI mismatches
+  "engines": {
+    "node": "20.x"
+  },
+
+  // Lock npm major version for reproducible installs
+  "packageManager": "npm@10.0.0"
+}
