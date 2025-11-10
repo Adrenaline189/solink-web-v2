@@ -1,8 +1,14 @@
-export type { DashboardRange } from "@/types/dashboard";
 // lib/dev-sim.ts
-import type { DashboardSummary, HourlyPoint, Tx } from "@/types/dashboard";
+import type {
+  DashboardSummary,
+  HourlyPoint,
+  Tx,
+  DashboardRange,
+} from "@/types/dashboard";
 
-export/* ---------- demo seeds ---------- */
+export type { DashboardRange };
+
+/* ---------- demo seeds ---------- */
 const INIT_SUMMARY: DashboardSummary = {
   pointsToday: 320,
   totalPoints: 12450,
