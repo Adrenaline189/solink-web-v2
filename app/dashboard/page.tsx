@@ -1,5 +1,5 @@
-import type { DashboardRange } from "@/types/dashboard";
 // app/dashboard/page.tsx
+import type { DashboardRange } from "@/types/dashboard";
 "use client";
 
 import NextDynamic from "next/dynamic";
@@ -14,20 +14,21 @@ export const dynamic = "force-dynamic";
 import { Card, CardContent } from "../../components/ui/card";
 import { Button } from "../../components/ui/button";
 import { Link2, Gauge, Award, Activity, Cloud, TrendingUp } from "lucide-react";
+
 import EarnTester from "@/components/EarnTester";
+import TurboFarm from "@/components/TurboFarm";
+
 import type { DashboardSummary, HourlyPoint, Tx } from "../../types/dashboard";
 import {
   fetchDashboardSummary,
   fetchHourly,
   fetchTransactions,
-  type Range,
 } from "../../lib/data/dashboard";
 
 import HourlyPoints from "../../components/charts/HourlyPoints";
 import { useWallet } from "@solana/wallet-adapter-react";
 import { usePrefs } from "../../lib/prefs-client";
-import TurboFarm from "@/components/TurboFarm";
-import PerWalletBreakdown from "@/components/PerWalletBreakdown";
+
 /* ---------------------------------- page ----------------------------------- */
 function DashboardInner() {
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
@@ -112,8 +113,6 @@ function DashboardInner() {
 
   return (
     <div className="min-h-screen text-slate-100 p-6">
-      {/* ⬇⬇⬇ Override ขนาด WalletMultiButton ให้เท่ากับปุ่ม Start Sharing */}
-
       <div className="max-w-7xl mx-auto">
         {/* Header */}
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6">
@@ -123,7 +122,7 @@ function DashboardInner() {
             {err && <p className="text-rose-400 text-sm mt-1">Error: {err}</p>}
           </div>
 
-          {/* ใส่คลาส wa-equal ที่ wrapper เดียว เพื่อให้ override ทำงาน */}
+          {/* ทำให้ WalletMultiButton สูงเท่ากับปุ่ม Start Sharing */}
           <div className="wa-equal flex items-center gap-3">
             <WalletMultiButton />
             <Button variant="secondary" className="rounded-2xl px-5 h-12">
@@ -132,14 +131,10 @@ function DashboardInner() {
           </div>
         </div>
 
-        <div className="mb-6">
-  <EarnTester />
-  <TurboFarm />   {/* เพิ่มบล็อกนี้ */}
-</div>
-
-        {/* Developer Test */}
+        {/* Test Blocks */}
         <div className="mb-6">
           <EarnTester />
+          <TurboFarm />
         </div>
 
         {/* KPI Cards */}
