@@ -1,8 +1,7 @@
+// lib/data/dashboard.ts
 import type { DashboardSummary, HourlyPoint, Tx, DashboardRange } from "@/types/dashboard";
-export type { DashboardRange };
 
-export type { Range } from "@/types/dashboard";
-import type { DashboardSummary, HourlyPoint, Tx } from "@/types/dashboard";
+export type { DashboardRange };
 
 /** Safe JSON fetcher that guards empty body and non-OK responses. */
 async function fetchJSON<T>(url: string, signal?: AbortSignal): Promise<T> {
@@ -11,11 +10,12 @@ async function fetchJSON<T>(url: string, signal?: AbortSignal): Promise<T> {
     const text = await res.text().catch(() => "");
     throw new Error(`HTTP ${res.status} from ${url}: ${text.slice(0, 140)}`);
   }
+
   const text = await res.text();
   if (!text) {
-    // unify empty as null/undefined depending on T
     throw new Error(`Empty JSON body from ${url}`);
   }
+
   try {
     return JSON.parse(text) as T;
   } catch (e) {
