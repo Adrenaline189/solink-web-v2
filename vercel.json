@@ -1,6 +1,15 @@
+cat > vercel.json <<'JSON'
 {
-  "devCommand": "next dev",
-  "installCommand": "npm install",
-  "framework": "nextjs",
-  "version": 2
+  "installCommand": "npm ci --no-audit --no-fund",
+  "buildCommand": "npm run vercel-build",
+  "env": {
+    "NPM_CONFIG_REGISTRY": "https://registry.npmjs.org/",
+    "NPM_CONFIG_FETCH_RETRIES": "5",
+    "NPM_CONFIG_FETCH_RETRY_MINTIMEOUT": "20000",
+    "NPM_CONFIG_FETCH_RETRY_MAXTIMEOUT": "120000"
+  }
 }
+JSON
+
+git add vercel.json
+git commit -m "chore(vercel): use npm ci + robust npm fetch retries"
