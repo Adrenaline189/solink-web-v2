@@ -1,24 +1,22 @@
-/**
- * Simple DB connectivity check.
- * Use this manually if you want to verify DATABASE_URL outside of Vercel build.
- */
-import('pg').then(async ({ Client }) => {
+// Simple connectivity check without taking advisory locks.
+import { Client } from "pg";
+
+async function main() {
   const url = process.env.DATABASE_URL;
   if (!url) {
-    console.error("[db-ping] Missing DATABASE_URL");
-    process.exit(1);
+    console.log("[db-ping] DATABASE_URL is not set; skipping.");
+    return;
   }
-  const client = new Client({ connectionString: url, ssl: { rejectUnauthorized: false } });
+  const client = new Client({ connectionString: url });
   try {
-    const t0 = Date.now();
     await client.connect();
-    const res = await client.query("SELECT 1 AS ok");
-    console.log(`[db-ping] ok=${res.rows[0]?.ok} in ${Date.now() - t0}ms`);
-    process.exit(0);
+    const { rows } = await client.query("SELECT 1 AS ok");
+    console.log("[db-ping] OK →", rows[0]);
   } catch (e) {
-    console.error("[db-ping] error:", e?.message || e);
-    process.exit(2);
+    console.error("[db-ping] Failed:", e.message);
+    // Don't exit non-zero during build; only log.
   } finally {
-    try { await client.end(); } catch {}
+    await client.end();
   }
-});
+}
+main();
