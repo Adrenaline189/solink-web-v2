@@ -1,4 +1,4 @@
-import type { Range } from "@/types/dashboard";
+import type { DashboardRange } from "@/types/dashboard";
 // app/dashboard/page.tsx
 "use client";
 
@@ -36,7 +36,7 @@ function DashboardInner() {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
 
-  const [range, setRange] = useState<Range>("today");
+  const [range, setRange] = useState<DashboardRange>("today");
   const { prefs } = usePrefs();
   const tz = prefs.tz;
 
@@ -365,10 +365,10 @@ function RangeRadios({
   value,
   onChange,
 }: {
-  value: Range;
-  onChange: (v: Range) => void;
+  value: DashboardRange;
+  onChange: (v: DashboardRange) => void;
 }) {
-  const opts: Array<{ v: Range; label: string }> = [
+  const opts: Array<{ v: DashboardRange; label: string }> = [
     { v: "today", label: "Today" },
     { v: "7d", label: "7d" },
     { v: "30d", label: "30d" },

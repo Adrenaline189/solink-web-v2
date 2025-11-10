@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import type { Range } from "@/types/dashboard";
+import type { DashboardRange } from "@/types/dashboard";
 
 export const dynamic = "force-dynamic";
 
@@ -13,7 +13,7 @@ function pad(n: number) { return n < 10 ? `0${n}` : `${n}`; }
 export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
-    const range = (searchParams.get("range") as Range) || "today";
+    const range = (searchParams.get("range") as DashboardRange) || "today";
 
     if (range !== "today") {
       // simple stub; upgrade later

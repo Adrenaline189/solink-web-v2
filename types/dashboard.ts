@@ -30,3 +30,6 @@ export type Tx = {
 };
 
 export type Range = "today" | "7d" | "30d";
+
+// ✅ ใช้ชื่อไม่ชนกับ DOM Range
+export type DashboardRange = "today" | "7d" | "30d";

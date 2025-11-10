@@ -1,3 +1,6 @@
+import type { DashboardSummary, HourlyPoint, Tx, DashboardRange } from "@/types/dashboard";
+export type { DashboardRange };
+
 export type { Range } from "@/types/dashboard";
 import type { DashboardSummary, HourlyPoint, Tx } from "@/types/dashboard";
 
@@ -24,12 +27,12 @@ export function fetchDashboardSummary(signal?: AbortSignal) {
   return fetchJSON<DashboardSummary>("/api/dashboard/summary", signal);
 }
 
-export function fetchHourly(range: Range, signal?: AbortSignal) {
+export function fetchHourly(range: DashboardRange, signal?: AbortSignal) {
   const q = new URLSearchParams({ range }).toString();
   return fetchJSON<HourlyPoint[]>(`/api/dashboard/hourly?${q}`, signal);
 }
 
-export function fetchTransactions(range: Range, signal?: AbortSignal) {
+export function fetchTransactions(range: DashboardRange, signal?: AbortSignal) {
   const q = new URLSearchParams({ range }).toString();
   return fetchJSON<Tx[]>(`/api/dashboard/transactions?${q}`, signal);
 }
