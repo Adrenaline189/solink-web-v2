@@ -19,11 +19,7 @@ import EarnTester from "@/components/EarnTester";
 import TurboFarm from "@/components/TurboFarm";
 
 import type { DashboardSummary, HourlyPoint, Tx } from "../../types/dashboard";
-import {
-  fetchDashboardSummary,
-  fetchHourly,
-  fetchTransactions,
-} from "../../lib/data/dashboard";
+import { fetchDashboardSummary, fetchHourly, fetchTransactions } from "../../lib/data/dashboard";
 
 import HourlyPoints from "../../components/charts/HourlyPoints";
 import { useWallet } from "@solana/wallet-adapter-react";
@@ -39,7 +35,7 @@ function DashboardInner() {
 
   const [range, setRange] = useState<DashboardRange>("today");
   const { prefs } = usePrefs();
-  const tz = prefs.tz;
+  const tz = "UTC"; // << fixed universal timezone
 
   const { publicKey, connected } = useWallet();
   const address = publicKey?.toBase58();
@@ -54,7 +50,9 @@ function DashboardInner() {
       code ||
       (() => {
         const c = Math.random().toString(36).slice(2, 10);
-        try { localStorage.setItem("solink_ref_code", c); } catch {}
+        try {
+          localStorage.setItem("solink_ref_code", c);
+        } catch {}
         return c;
       })();
     setRefLink(`${origin.replace(/\/$/, "")}/r/${encodeURIComponent(finalCode)}`);
@@ -122,7 +120,7 @@ function DashboardInner() {
             {err && <p className="text-rose-400 text-sm mt-1">Error: {err}</p>}
           </div>
 
-          {/* ทำให้ WalletMultiButton สูงเท่ากับปุ่ม Start Sharing */}
+          {/* Make WalletMultiButton height match Start Sharing button */}
           <div className="wa-equal flex items-center gap-3">
             <WalletMultiButton />
             <Button variant="secondary" className="rounded-2xl px-5 h-12">
@@ -214,9 +212,7 @@ function DashboardInner() {
                 Share your referral link and earn bonus points when friends join.
               </p>
 
-              <label htmlFor="ref-link" className="text-sm text-slate-400">
-                Your referral link
-              </label>
+              <label htmlFor="ref-link" className="text-sm text-slate-400">Your referral link</label>
               <div className="mt-2 flex flex-col sm:flex-row gap-2">
                 <input
                   id="ref-link"
