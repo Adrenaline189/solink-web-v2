@@ -1,81 +1,32 @@
-# =====================================================
-#  GitHub Actions Workflow: Prisma Migrate Deploy
-#  -----------------------------------------------------
-#  Purpose:
-#    This workflow runs "prisma migrate deploy" whenever
-#    code is pushed to the main branch, or triggered manually.
-#    It ensures the production database schema stays in sync
-#    with your Prisma schema before Vercel deploys the app.
-#
-#  Author: Solink Network (CI Automation)
-#  =====================================================
-
 name: Prisma Migrate Deploy
-
 on:
   push:
-    branches: [ main ]     # Run automatically on push to main
-  workflow_dispatch:        # Allow manual trigger from GitHub UI
+    branches: [ main ]
+  workflow_dispatch:
 
 jobs:
   migrate:
-    environment: Production # Access secrets from "Production" environment
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
     steps:
-      # -------------------------------------------------
-      # Step 1: Checkout the repository code
-      # -------------------------------------------------
       - name: Checkout
         uses: actions/checkout@v4
 
-      # -------------------------------------------------
-      # Step 2: Setup Node.js (same version used in Vercel)
-      # -------------------------------------------------
       - name: Use Node.js 20
         uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: 'npm'
 
-      # -------------------------------------------------
-      # Step 3: Guard - check if DATABASE_URL secret exists
-      # -------------------------------------------------
-      - name: Check DATABASE_URL secret
-        run: |
-          if [ -z "${{ secrets.DATABASE_URL }}" ]; then
-            echo "::error::Missing DATABASE_URL secret in repository or environment settings."
-            exit 1
-          else
-            echo "✅ DATABASE_URL secret is set."
-          fi
-
-      # -------------------------------------------------
-      # Step 4: Install dependencies (using lockfile)
-      # -------------------------------------------------
       - name: Install deps
         run: npm ci
 
-      # -------------------------------------------------
-      # Step 5: Generate Prisma Client
-      # -------------------------------------------------
       - name: Generate Prisma Client
         run: npm run prisma:generate
 
-      # -------------------------------------------------
-      # Step 6: Deploy Prisma Migrations
-      # -------------------------------------------------
       - name: Deploy migrations
         env:
-          # The database connection string is pulled securely from GitHub Secrets
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          # Increase lock timeout (default 15s) to reduce P1002 errors
           PRISMA_MIGRATE_ADVISORY_LOCK_TIMEOUT: "30000"
         run: npm run prisma:migrate
-
-      # -------------------------------------------------
-      # Step 7: Post confirmation message
-      # -------------------------------------------------
-      - name: Done
-        run: echo "🎉 Prisma migrations successfully deployed!"
