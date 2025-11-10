@@ -1,25 +1,29 @@
 {
+  "//": "Base configuration. You can override any numeric/string values by environment variables. See comments below.",
   "baseUrl": "https://api-solink.network",
-  "type": "extension_farm",
-  "amount": 50,
+  "farmType": "extension_farm",
+  "amountPerShot": 50,
   "bursts": 40,
-  "concurrency": 3,
+  "concurrency": 5,
   "dailyCap": 2000,
-
-  // รายชื่อกระเป๋า (จะ override ได้ด้วย ENV: WALLETS="demo_wallet_test1,demo_wallet_test2")
   "wallets": [
-    { "wallet": "demo_wallet_test1" },
-    { "wallet": "demo_wallet_test2"}
-  ],
+    {
+      "wallet": "demo_wallet_test1"
+      // "token": "OPTIONAL_REAL_JWT"  // Leave empty to let the script perform demo-login.
+    },
+    {
+      "wallet": "demo_wallet_test2"
+      // IMPORTANT: Do NOT put a placeholder like STATIC_JWT_TOKEN_IF_YOU_HAVE.
+      // If token is omitted, the script will call /api/auth/demo-login for this wallet.
+    }
+  ]
 
-  // ตั้งค่า rate limit + jitter
-  "rate": {
-    "rps": 3,
-    "bucketSize": 6,
-    "refillEveryMs": 350,
-    "jitterMs": [50, 150]
-  },
-
-  // โหมดปรับตัวเมื่อโดน 429 เยอะ ๆ
-  "adaptiveMode": true
+  // Notes:
+  // - ENV overrides:
+  //   BASE_URL, TYPE, AMOUNT, BURSTS, CONCURRENCY, CAP
+  //   WALLETS="demo_wallet_test2" or WALLETS="demo_wallet_test1,demo_wallet_test2"
+  //
+  // - If demo_wallet_test2 keeps getting 401:
+  //     (1) Make sure you did NOT put a fake token in config.
+  //     (2) Ensure backend allows demo-login for that wallet.
 }
