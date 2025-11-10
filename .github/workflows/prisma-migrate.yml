@@ -1,0 +1,57 @@
+# Run Prisma migrations in CI BEFORE (or alongside) deployments.
+# Why: Avoid running `prisma migrate deploy` during Vercel build which often
+# hits advisory-lock timeouts (P1002) against pooled providers (Neon/pgBouncer).
+
+name: Prisma Migrate Deploy
+
+on:
+  push:
+    branches: ["main"] # Run when code lands on main
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1) Checkout repository
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # 2) Setup Node.js (match your runtime, recommended 20.x)
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      # 3) Install dependencies with a clean, reproducible install
+      - name: Install
+        run: npm ci
+
+      # 4) Generate Prisma Client (safe on CI)
+      - name: Generate Prisma Client
+        run: npx prisma generate
+
+      # 5) Run migrations against production DB
+      #    IMPORTANT: DATABASE_URL must be set in GitHub Secrets.
+      - name: Run migrations
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          # Give Prisma schema engine more time (milliseconds)
+          PRISMA_SCHEMA_ENGINE_CONNECTION_TIMEOUT: "30000"
+        run: npx prisma migrate deploy
+
+      # (Optional) 6) Trigger a Vercel Deploy Hook AFTER migrations succeed
+      # - Enable this only if you've disabled Vercel's automatic GitHub builds
+      #   and plan to deploy via deploy hook from CI.
+      # - Create a Vercel "Deploy Hook" and save it in GH secret VERCEL_DEPLOY_HOOK_URL.
+      #
+      # - name: Trigger Vercel deploy
+      #   if: success()
+      #   env:
+      #     HOOK: ${{ secrets.VERCEL_DEPLOY_HOOK_URL }}
+      #   run: |
+      #     if [ -z "$HOOK" ]; then
+      #       echo "No VERCEL_DEPLOY_HOOK_URL defined; skipping deploy trigger."
+      #     else
+      #       curl -X POST "$HOOK"
+      #     fi
