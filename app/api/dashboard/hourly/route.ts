@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import type { Range } from "@/lib/data/dashboard";
+import type { Range } from "@/types/dashboard";
 
 export const dynamic = "force-dynamic";
 
