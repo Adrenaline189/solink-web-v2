@@ -1,77 +1,92 @@
-// scripts/autofarm-logger.ts
-import fs from "node:fs";
-import path from "node:path";
-import { RunSummary } from "./types";
+/**
+ * AutoFarm Logger (full version with English comments)
+ * ----------------------------------------------------
+ * Reads the latest JSON summary (scripts/logs/YYYY-MM-DD.json)
+ * and emits a compact CSV line per wallet for daily accumulation.
+ *
+ * NOTE:
+ * - This script is optional because the scheduler already writes a per-wallet CSV.
+ * - Kept as a utility for custom formats or external pipelines.
+ */
 
-const LOG_DIR = path.resolve(process.cwd(), "scripts", "logs");
+import fs from "fs";
+import path from "path";
 
-function ensureDirSync(dir: string) {
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+type PerWallet = Record<
+  string,
+  {
+    wallet: string;
+    token?: string;
+    earned?: number;
+    shotsDone?: number;
+    shotsTried?: number;
+    lastBalance?: number;
+    lastError?: string;
+  }
+>;
+
+type SummaryFile = {
+  date: string;
+  farmType: string;
+  amountPerShot: number;
+  bursts: number;
+  concurrency: number;
+  dailyCap: number;
+  baseUrl: string;
+  totals: {
+    wallets: number;
+    successShots: number;
+    failedShots: number;
+    totalEarned: number;
+  };
+  perWallet: PerWallet;
+};
+
+function isoDateOnly(d = new Date()) {
+  return d.toISOString().slice(0, 10);
 }
 
-function redactSecrets<T>(obj: T): T {
-  // clone แบบปลอดภัย
-  const clone: any = JSON.parse(JSON.stringify(obj));
-
-  // ตัด JWT รูปแบบ xxx.yyy.zzz
-  const redactJWT = (s: unknown) =>
-    typeof s === "string" && /^\S+\.\S+\.\S+$/.test(s) ? "****JWT_REDACTED****" : s;
-
-  if (clone?.perWallet) {
-    for (const k of Object.keys(clone.perWallet)) {
-      if (clone.perWallet[k]?.token) clone.perWallet[k].token = "****REDACTED****";
-    }
-  }
-
-  // ป้องกันหลุดซ้ำในค่าอื่น ๆ
-  const serialized = JSON.stringify(clone, (_, v) => redactJWT(v), 2);
-  return JSON.parse(serialized);
+function latestJsonPath(): string | null {
+  const logDir = path.resolve(process.cwd(), "scripts/logs");
+  if (!fs.existsSync(logDir)) return null;
+  const files = fs
+    .readdirSync(logDir)
+    .filter((f) => f.endsWith(".json"))
+    .map((f) => path.join(logDir, f))
+    .sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs);
+  return files[0] ?? null;
 }
 
-export function writeSummary(summary: RunSummary) {
-  ensureDirSync(LOG_DIR);
-
-  const safe = redactSecrets(summary);
-
-  const iso = new Date(summary.date).toISOString().slice(0, 10); // YYYY-MM-DD
-  const jsonPath = path.join(LOG_DIR, `${iso}.json`);
-  const logPath = path.join(LOG_DIR, `${iso}.log`);
-  const csvPath = path.join(LOG_DIR, `${iso}-per-wallet.csv`);
-
-  // JSON
-  fs.writeFileSync(jsonPath, JSON.stringify(safe, null, 2), "utf8");
-
-  // Plain log (append)
-  const lines: string[] = [];
-  lines.push(`[${summary.date}] farmType=${safe.farmType} amount=${safe.amountPerShot} bursts=${safe.bursts} conc=${safe.concurrency} cap=${safe.dailyCap}`);
-  lines.push(`Totals: wallets=${safe.totals.wallets} successShots=${safe.totals.successShots} failedShots=${safe.totals.failedShots} totalEarned=${safe.totals.totalEarned}`);
-  for (const [wallet, wdata] of Object.entries(safe.perWallet)) {
-    lines.push(
-      ` - ${wallet}: earned=${wdata.earned} done=${wdata.shotsDone} tried=${wdata.shotsTried}` +
-      (wdata.lastBalance != null ? ` lastBalance=${wdata.lastBalance}` : "") +
-      (wdata.lastError ? ` lastError="${wdata.lastError}"` : "")
-    );
+async function main() {
+  const latest = latestJsonPath();
+  if (!latest) {
+    console.log("No JSON summary found under scripts/logs");
+    return;
   }
-  fs.appendFileSync(logPath, lines.join("\n") + "\n", "utf8");
+  const content = fs.readFileSync(latest, "utf8");
+  const parsed: SummaryFile = JSON.parse(content);
 
-  // CSV per-wallet
-  const header = `wallet,earned,done,tried,lastBalance,lastError\n`;
+  const date = parsed.date || new Date().toISOString();
+  const dateOnly = date.slice(0, 10);
+  const totals = parsed.totals || { totalEarned: 0 };
+
   const rows: string[] = [];
-  for (const [wallet, wdata] of Object.entries(safe.perWallet)) {
-    rows.push(
-      [
-        wallet,
-        wdata.earned ?? 0,
-        wdata.shotsDone ?? 0,
-        wdata.shotsTried ?? 0,
-        wdata.lastBalance ?? "",
-        (wdata.lastError ?? "").toString().replaceAll('"', '""'),
-      ]
-        .map((v) => (typeof v === "string" && v.includes(",") ? `"${v}"` : v))
-        .join(",")
-    );
+  rows.push("date,wallet,earned,done,failed,totalEarned");
+  for (const [wallet, wdata] of Object.entries(parsed.perWallet || {})) {
+    const earned = wdata.earned ?? 0;
+    const done = wdata.shotsDone ?? 0;
+    const tried = wdata.shotsTried ?? 0;
+    const failed = Math.max(0, tried - done);
+    const line = `${dateOnly},${wallet},${earned},${done},${failed},${totals.totalEarned ?? 0}`;
+    rows.push(line);
   }
-  fs.writeFileSync(csvPath, header + rows.join("\n"), "utf8");
 
-  return { jsonPath, logPath, csvPath };
+  const outPath = path.resolve(process.cwd(), "scripts/logs", `${isoDateOnly()}.logger.csv`);
+  fs.writeFileSync(outPath, rows.join("\n") + "\n", "utf8");
+  console.log(`Wrote → ${outPath}`);
 }
+
+main().catch((e) => {
+  console.error(e);
+  process.exit(1);
+});
