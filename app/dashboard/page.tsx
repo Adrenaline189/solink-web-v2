@@ -1,3 +1,4 @@
+import type { Range } from "@/types/dashboard";
 // app/dashboard/page.tsx
 "use client";
 
