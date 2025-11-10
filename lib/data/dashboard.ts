@@ -19,6 +19,7 @@ async function getJson<T>(url: string, signal?: AbortSignal): Promise<T> {
   if (!res.ok) throw new Error(`HTTP ${res.status} — ${res.statusText}`);
   return (await res.json()) as T;
 }
+export type { Range } from "@/types/dashboard";
 
 /**
  * Fetch dashboard summary data (points, uptime, QF, etc.)
