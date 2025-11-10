@@ -1,37 +1,26 @@
 name: Prisma Migrate Deploy
-
 on:
   push:
     branches: [ main ]
   workflow_dispatch:
-
 jobs:
   migrate:
     runs-on: ubuntu-latest
     timeout-minutes: 10
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Use Node.js 22
+      - name: Use Node.js 20
         uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 20
           cache: npm
-
       - name: Install deps
-        # ⚠️ Use `npm ci` only when lockfile is in-sync.
         run: npm ci
-
       - name: Generate Prisma Client
         run: npm run prisma:generate
-
-      - name: Run migrations against Neon
+      - name: Deploy migrations
         env:
-          # Provide DB URL via GitHub Secrets
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-
-          # Increase advisory lock timeout to avoid false timeouts
           PRISMA_MIGRATE_ADVISORY_LOCK_TIMEOUT: "30000"
         run: npm run prisma:migrate

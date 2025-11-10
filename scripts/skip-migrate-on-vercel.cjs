@@ -1,9 +1,4 @@
-// scripts/skip-migrate-on-vercel.cjs
-// Purpose: Avoid running Prisma migrations during Vercel builds.
-// Vercel sets VERCEL=1 in the build environment. We only generate Prisma Client.
-// In CI (non-Vercel), we do run `prisma migrate deploy` instead.
-
-import { execSync } from "node:child_process";
+const { execSync } = require("node:child_process");
 
 const onVercel = process.env.VERCEL === "1";
 const force = process.env.FORCE_MIGRATE_ON_VERCEL === "1";
