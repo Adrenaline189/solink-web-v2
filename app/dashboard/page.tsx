@@ -35,7 +35,7 @@ function DashboardInner() {
 
   const [range, setRange] = useState<DashboardRange>("today");
   const { prefs } = usePrefs();
-  const tz = "UTC"; // << fixed universal timezone
+  const tz = "UTC"; // ใช้โซนเวลาสากลแบบคงที่
 
   const { publicKey, connected } = useWallet();
   const address = publicKey?.toBase58();
@@ -120,7 +120,7 @@ function DashboardInner() {
             {err && <p className="text-rose-400 text-sm mt-1">Error: {err}</p>}
           </div>
 
-          {/* Make WalletMultiButton height match Start Sharing button */}
+          {/* ทำให้ WalletMultiButton สูงเท่าปุ่ม Start Sharing */}
           <div className="wa-equal flex items-center gap-3">
             <WalletMultiButton />
             <Button variant="secondary" className="rounded-2xl px-5 h-12">
@@ -414,7 +414,7 @@ function DashboardGlobalStyles() {
       .mw-80 { width: 80% } .mw-85 { width: 85% } .mw-90 { width: 90% } .mw-95 { width: 95% }
       .mw-100 { width: 100% }
 
-      /* Make WalletMultiButton match Start Sharing button when wrapped in .wa-equal */
+      /* ทำให้ WalletMultiButton เท่าปุ่ม Start Sharing เมื่ออยู่ใน .wa-equal */
       .wa-equal .wallet-adapter-button {
         height: 3rem;               /* h-12 */
         padding: 0 1.25rem;         /* px-5 */
