@@ -1,3 +1,4 @@
+// lib/solana/WalletProviders.tsx
 'use client';
 
 import '@solana/wallet-adapter-react-ui/styles.css';
@@ -10,8 +11,8 @@ import { WalletModalProvider } from '@solana/wallet-adapter-react-ui';
 import {
   PhantomWalletAdapter,
   SolflareWalletAdapter,
-  // BackpackWalletAdapter,  // ❌ ลบออก: ไม่มีใน @solana/wallet-adapter-wallets
 } from '@solana/wallet-adapter-wallets';
+import { WalletAdapterNetwork } from '@solana/wallet-adapter-base';
 import { clusterApiUrl } from '@solana/web3.js';
 
 type Props = { children: ReactNode };
@@ -24,8 +25,8 @@ export default function WalletProviders({ children }: Props) {
   const wallets = useMemo(
     () => [
       new PhantomWalletAdapter(),
-      new SolflareWalletAdapter({ network: 'mainnet-beta' }),
-      // new BackpackWalletAdapter(), // ❌ ลบออก
+      // ใช้ enum ให้ถูกชนิด
+      new SolflareWalletAdapter({ network: WalletAdapterNetwork.Mainnet }),
     ],
     []
   );
