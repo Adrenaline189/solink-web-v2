@@ -1,50 +1,38 @@
-// ----- Prisma Client -----
-generator client {
-  provider = "prisma-client-js"
-}
-
-// ----- PostgreSQL datasource -----
-datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
-}
-
 // =========================
-//        MODELS
+//   METRICS (NEW TABLES)
 // =========================
 
-model Setting {
-  id     String  @id @default(cuid())
-  userId String?           
-  key    String
-  value  String
+model MetricsHourly {
+  id           String   @id @default(cuid())
+  hourUtc      DateTime @index                        // ตัวแทนชั่วโมง UTC: 2025-11-11T10:00:00Z
+  userId       String?  @index
+  // หมายเหตุ: ถ้าต้องการผูก relation กับ User แบบ optional:
+  user         User?    @relation(fields: [userId], references: [id])
 
-  @@unique([userId, key])
-  @@index([key])
+  pointsEarned Int      @default(0)
+  uptimePct    Float?   // 0..100
+  avgBandwidth Float?   // Mbps
+  qfScore      Float?
+  trustScore   Float?
+
+  createdAt    DateTime @default(now())
+
+  @@unique([hourUtc, userId], name: "hourUtc_userId_unique") // ให้ upsert ได้คีย์เดียวต่อชั่วโมง/ต่อผู้ใช้
 }
 
-model User {
-  id        String       @id @default(cuid())
-  wallet    String?      @unique
-  createdAt DateTime     @default(now())
-  events    PointEvent[]
-}
+model MetricsDaily {
+  id           String   @id @default(cuid())
+  dayUtc       DateTime @index                        // ตัวแทนวัน UTC: 2025-11-11T00:00:00Z
+  userId       String?  @index
+  user         User?    @relation(fields: [userId], references: [id])
 
-model PointEvent {
-  id        String   @id @default(cuid())
-  userId    String
-  user      User     @relation(fields: [userId], references: [id])
-  type      String
-  amount    Int
-  meta      Json?
-  nonce     String?  @unique
-  createdAt DateTime @default(now())
+  pointsEarned Int      @default(0)
+  uptimePct    Float?
+  avgBandwidth Float?
+  qfScore      Float?
+  trustScore   Float?
 
-  @@index([userId, createdAt])
-}
+  createdAt    DateTime @default(now())
 
-model PointBalance {
-  userId    String   @id
-  balance   Int      @default(0)
-  updatedAt DateTime @updatedAt
+  @@unique([dayUtc, userId], name: "dayUtc_userId_unique")
 }
