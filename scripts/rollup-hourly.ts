@@ -1,6 +1,6 @@
 import { Queue, Worker, QueueScheduler, JobsOptions } from "bullmq";
-import { getRedis } from "@/lib/redis";
 import { prisma } from "@/server/db";
+import { getRedis } from "@/lib/redis";
 
 const connection = getRedis();
 const queueName = "metrics-rollup-hourly";
@@ -8,13 +8,11 @@ const queueName = "metrics-rollup-hourly";
 export const queue = new Queue(queueName, { connection });
 new QueueScheduler(queueName, { connection });
 
-// ใช้จาก CRON route
 export async function enqueueHourlyRollup(hourIso?: string) {
   const opts: JobsOptions = { removeOnComplete: 200, removeOnFail: 100 };
   await queue.add("rollup", { hourIso }, opts);
 }
 
-// Worker (จะถูก import ตอน runtime ฝั่ง Node.js เท่านั้น)
 export function startHourlyWorker() {
   return new Worker(
     queueName,
@@ -27,14 +25,12 @@ export function startHourlyWorker() {
       hourStart.setMinutes(0, 0, 0);
       const hourEnd = new Date(hourStart.getTime() + 3600_000);
 
-      // รวมแต้มต่อ user ในช่วงชั่วโมง
       const grouped = await prisma.pointEvent.groupBy({
         by: ["userId"],
         where: { createdAt: { gte: hourStart, lt: hourEnd } },
         _sum: { amount: true },
       });
 
-      // global row (ทั้งระบบ)
       const total = grouped.reduce((s, g) => s + (g._sum.amount ?? 0), 0);
       await prisma.metricsHourly.upsert({
         where: { hourUtc_userId_unique: { hourUtc: hourStart, userId: null } },
@@ -53,12 +49,10 @@ export function startHourlyWorker() {
         },
       });
 
-      // ต่อ user
       for (const g of grouped) {
         const userId = g.userId;
         const points = g._sum.amount ?? 0;
 
-        // TODO: แทนค่านี้ด้วยสถิติจริงจาก telemetry/collector
         const uptimePct = null;
         const avgBandwidth = null;
         const qfScore = Math.sqrt(Math.max(points, 0));
@@ -85,8 +79,9 @@ export function startHourlyWorker() {
         });
       }
 
-      // (ออปชัน) สรุปวัน: อัปเดต MetricsDaily ของวันนั้น ๆ
-      const dayStart = new Date(Date.UTC(hourStart.getUTCFullYear(), hourStart.getUTCMonth(), hourStart.getUTCDate()));
+      const dayStart = new Date(Date.UTC(
+        hourStart.getUTCFullYear(), hourStart.getUTCMonth(), hourStart.getUTCDate()
+      ));
       const dayEnd = new Date(dayStart.getTime() + 86_400_000);
 
       const sumDay = await prisma.metricsHourly.aggregate({
@@ -110,8 +105,6 @@ export function startHourlyWorker() {
   );
 }
 
-// ป้องกันถูก import โดย client bundle (ไม่มีผลเพราะเป็นไฟล์ server-only)
 if (process.env.NODE_ENV === "production") {
-  // ใน production เราไม่ start worker อัตโนมัติใน Vercel build
-  // ให้ start ใน process ที่เหมาะสม (เช่น background worker หรือ self-host)
+  // ไม่ start worker อัตโนมัติใน Vercel
 }
