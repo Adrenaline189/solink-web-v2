@@ -1,0 +1,3 @@
+Contact: mailto:security@solink.network
+Policy: https://solink.network/security
+Preferred-Languages: en
