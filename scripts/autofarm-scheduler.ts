@@ -34,13 +34,14 @@ import { fileURLToPath } from "url";
 import crypto from "crypto";
 
 // ----------------------- Path & Environment helpers -----------------------
+// ✅ ESM-safe; ไม่อ้างอิงตัวเอง
+const __filename: string = fileURLToPath(import.meta.url);
+const __dirname: string = path.dirname(__filename);
 
-const __filename =
-  // @ts-ignore
-  typeof __filename !== "undefined" ? __filename : fileURLToPath(import.meta.url);
-const __dirname =
-  // @ts-ignore
-  typeof __dirname !== "undefined" ? __dirname : path.dirname(__filename);
+// ป้องกันถูก import เข้า Next runtime โดยไม่ตั้งใจ (เช่นเผลอ import จากไฟล์อื่น)
+if (process.env.NEXT_RUNTIME) {
+  throw new Error("scripts/autofarm-scheduler.ts should not be imported by Next.js runtime");
+}
 
 function nowTs() {
   const d = new Date();
@@ -158,7 +159,6 @@ async function loadConfig(): Promise<AutoFarmConfig> {
   // ENV WALLETS filter/override (strict)
   const envWallets = parseCsvEnv("WALLETS");
   if (envWallets && envWallets.length > 0) {
-    // Map env list onto existing config entries (preserve token if provided there)
     const map = new Map(parsed.wallets.map((w) => [w.wallet, w]));
     parsed.wallets = envWallets.map((w) => map.get(w) ?? { wallet: w });
   }
@@ -168,10 +168,6 @@ async function loadConfig(): Promise<AutoFarmConfig> {
 
 // ------------------------------- API Layer --------------------------------
 
-/**
- * Encapsulates API calls. In DRY_RUN, absolutely no network I/O is performed,
- * and predictable mock responses are returned instead.
- */
 class Api {
   constructor(private baseUrl: string, private dryRun: boolean) {}
 
@@ -192,13 +188,12 @@ class Api {
   }
 
   async demoLogin(wallet: string): Promise<{ token: string } | null> {
-    // In DRY_RUN return a fake token, but do not log "token ready" from server
     if (this.dryRun) {
       return { token: `DRY.${Buffer.from(wallet).toString("base64")}.RUN` };
     }
     const url = `${this.baseUrl.replace(/\/+$/, "")}/api/auth/demo-login`;
     const resp = await this.postJson<{ token: string }>(url, { wallet });
-    if ("ok" in resp && !resp.ok) return null; // TS appeasement if casted
+    if ("ok" in resp && !resp.ok) return null;
     if (resp.status === 200) {
       const data = await resp.json();
       return data?.token ? data : null;
@@ -212,7 +207,6 @@ class Api {
     const headers = { Authorization: `Bearer ${token}` };
 
     if (this.dryRun) {
-      // Simulate a successful earn with a pseudo-random balance step
       const balance = 50000 + Math.floor(Math.random() * 2000);
       return { status: 200, ok: true, data: { ok: true, balance } };
     }
@@ -224,7 +218,7 @@ class Api {
     } catch {
       /* swallow JSON parse errors */
     }
-    return { status: resp.status, ok: (resp as any).ok === true, data };
+    return { status: (resp as any).status, ok: (resp as any).ok === true, data };
   }
 }
 
@@ -238,13 +232,10 @@ async function farmWallet(
 ): Promise<PerWalletRun> {
   const { amountPerShot, bursts, concurrency, dailyCap, farmType } = cfg;
 
-  // Resolve token strategy
   let token: string | undefined = walletCfg.token;
   if (!looksLikeJwt(token)) {
-    // Missing/placeholder token → try demo-login (unless DRY_RUN)
     const login = await api.demoLogin(walletCfg.wallet);
     if (!login) {
-      // No token (e.g., 401 backend) — we still proceed but any real call will fail.
       token = undefined;
     } else {
       token = login.token;
@@ -252,49 +243,39 @@ async function farmWallet(
     }
   }
 
-  // Per-wallet accumulators
   let earned = 0;
   let shotsDone = 0;
   let shotsTried = 0;
   let lastBalance = 0;
   let lastError: string | undefined;
 
-  // Cap guard: how many shots allowed by cap?
   const remainingToCap = Math.max(0, Math.floor((dailyCap - earned) / amountPerShot));
   const maxShotsByCap = Math.min(bursts, remainingToCap || bursts);
 
-  // Prepare a queue of "work items" = shot numbers 1..bursts
   const totalShots = Math.min(bursts, Math.ceil(dailyCap / amountPerShot));
   const work: number[] = Array.from({ length: totalShots }, (_, i) => i + 1);
 
-  // Simple concurrency pool
   const workers: Promise<void>[] = [];
   const maxWorkers = Math.max(1, concurrency);
 
   async function runOne(shotNo: number) {
     shotsTried += 1;
 
-    // If cap already hit, skip
-    if (earned >= dailyCap) {
-      return;
-    }
+    if (earned >= dailyCap) return;
 
-    // If no valid token, mark 401 and stop trying further "real" earn calls for this wallet
     if (!looksLikeJwt(token)) {
       lastError = "Unauthorized";
       warn(`❌ (${walletCfg.wallet}) status=401 error="Unauthorized"`);
       return;
     }
 
-    // 429 retry loop (6 attempts matches your logs)
-    const backoffs = [600, 1100, 2100, 4100, 8100, 15100]; // base ms (approx as per your logs)
+    const backoffs = [600, 1100, 2100, 4100, 8100, 15100]; // ms
     let attempt = 0;
 
-    // If DRY_RUN → a single simulated "200" then return
     if (parseBoolEnv("DRY_RUN", false)) {
       shotsDone += 1;
       earned += amountPerShot;
-      lastBalance += amountPerShot; // purely cosmetic in DRY
+      lastBalance += amountPerShot;
       info(`✅ +${amountPerShot} (${walletCfg.wallet}) shots=${shotsDone}/${bursts}, earned=${earned}/${dailyCap} balance=${lastBalance}`);
       return;
     }
@@ -302,25 +283,20 @@ async function farmWallet(
     while (attempt <= backoffs.length) {
       const resp = await api.earn(token!, farmType, amountPerShot, session);
 
-      // Handle success
       if (resp.status === 200 && resp.data?.ok) {
         shotsDone += 1;
         earned += amountPerShot;
         lastBalance = Number(resp.data?.balance ?? lastBalance);
-        info(
-          `✅ +${amountPerShot} (${walletCfg.wallet}) shots=${shotsDone}/${bursts}, earned=${earned}/${dailyCap} balance=${lastBalance}`
-        );
+        info(`✅ +${amountPerShot} (${walletCfg.wallet}) shots=${shotsDone}/${bursts}, earned=${earned}/${dailyCap} balance=${lastBalance}`);
         return;
       }
 
-      // Handle 401
       if (resp.status === 401) {
         lastError = "Unauthorized";
         warn(`❌ (${walletCfg.wallet}) status=401 error="Unauthorized"`);
         return;
       }
 
-      // Handle 429 with backoff
       if (resp.status === 429 && attempt < backoffs.length) {
         const wait = jitter(backoffs[attempt]);
         warn(`⏳ Backoff (${attempt + 1}/${backoffs.length}) for status 429 → ${wait}ms`);
@@ -329,7 +305,6 @@ async function farmWallet(
         continue;
       }
 
-      // Other errors or out-of-retries for 429
       lastError = resp?.data?.error || `HTTP_${resp.status}`;
       if (resp.status === 429) {
         warn(`❌ (${walletCfg.wallet}) status=429 error="Too many requests. Please try again in a moment."`);
@@ -340,12 +315,10 @@ async function farmWallet(
     }
   }
 
-  // Launch worker pool
   for (let i = 0; i < maxWorkers; i++) {
     workers.push(
       (async () => {
         while (work.length > 0) {
-          // Stop if cap reached
           if (earned >= dailyCap) break;
           const next = work.shift();
           if (next == null) break;
@@ -357,7 +330,6 @@ async function farmWallet(
 
   await Promise.all(workers);
 
-  // If we exactly hit the cap, add a friendly line (matching your logs)
   if (earned >= dailyCap) {
     info(`🏁 CAP reached for ${walletCfg.wallet} → ${earned}/${dailyCap}`);
   }
@@ -428,7 +400,6 @@ async function writeDailySummary(
   const start = new Date();
   const session = makeSessionId();
 
-  // Load config
   let cfg: AutoFarmConfig;
   try {
     cfg = await loadConfig();
@@ -439,51 +410,33 @@ async function writeDailySummary(
   }
 
   console.log(nowTs(), "[INFO]", "==============================================");
-  info(
-    `🚀 AutoFarm run started (session: ${session})`
-  );
+  info(`🚀 AutoFarm run started (session: ${session})`);
+  info(`baseUrl=${cfg.baseUrl} | type=${cfg.farmType} | amount=${cfg.amountPerShot} | bursts=${cfg.bursts} | conc=${cfg.concurrency} | cap=${cfg.dailyCap}`);
 
-  info(
-    `baseUrl=${cfg.baseUrl} | type=${cfg.farmType} | amount=${cfg.amountPerShot} | bursts=${cfg.bursts} | conc=${cfg.concurrency} | cap=${cfg.dailyCap}`
-  );
-
-  // Helpful header lines (explicit, so users can see ENV wallet selection)
   const walletsList = cfg.wallets.map((w) => w.wallet);
   console.log(`${nowTs()} using wallets=[${walletsList.join(",")}]`);
   if (DRY_RUN) {
     console.log(`${nowTs()} DRY-RUN mode: no network calls (no login, no earn)`);
   }
 
-  // Build API
   const api = new Api(cfg.baseUrl, DRY_RUN);
 
-  // Run per-wallet (sequential to keep logs tidy; internal shots are concurrent)
   const perWallet: PerWalletRun[] = [];
   for (const w of cfg.wallets) {
-    // Proactive "token ready" line only when we truly obtained a token (in farmWallet)
     const res = await farmWallet(api, cfg, w, session);
     perWallet.push(res);
   }
 
-  // Write daily summary
   await writeDailySummary(start, cfg, perWallet);
 
-  // Final tallies
   const totalSuccess = perWallet.reduce((a, w) => a + w.shotsDone, 0);
   const totalTried = perWallet.reduce((a, w) => a + w.shotsTried, 0);
   const totalEarned = perWallet.reduce((a, w) => a + w.earned, 0);
 
-  info(
-    `🌾 Run done → successShots=${totalSuccess}, failedShots=${Math.max(
-      0,
-      totalTried - totalSuccess
-    )}, totalEarned=${totalEarned}`
-  );
+  info(`🌾 Run done → successShots=${totalSuccess}, failedShots=${Math.max(0, totalTried - totalSuccess)}, totalEarned=${totalEarned}`);
   console.log(nowTs(), "[INFO]", "==============================================");
 
-  // Clean exit
   if (perWallet.some((w) => w.lastError)) {
-    // Non-zero exit code to indicate partial failure (useful for CI)
     process.exit(2);
   } else {
     process.exit(0);
