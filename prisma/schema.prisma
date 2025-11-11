@@ -14,7 +14,7 @@ datasource db {
 }
 
 // =========================
-//        MODELS
+/*        MODELS          */
 // =========================
 
 model Setting {
@@ -33,7 +33,7 @@ model User {
   createdAt DateTime      @default(now())
   events    PointEvent[]
 
-  // (ไม่บังคับ) ความสัมพันธ์กับ Metrics
+  // optional back-relations
   metricsHourly MetricsHourly[]
   metricsDaily  MetricsDaily[]
 }
@@ -48,32 +48,30 @@ model PointEvent {
   nonce     String?  @unique
   createdAt DateTime @default(now())
 
-  @@index([userId, createdAt])   // มีอยู่เดิม
-  @@index([createdAt])           // เพิ่ม: รวมกราฟทั้งระบบ
-  @@index([type, createdAt])     // เพิ่ม: กรองตาม type เร็วขึ้น
+  @@index([userId, createdAt])   // เดิมมีแล้ว
+  @@index([createdAt])           // รวมกราฟทั้งระบบ
+  @@index([type, createdAt])     // กรองตาม type
 }
 
 model PointBalance {
   userId    String   @id
   balance   Int      @default(0)
   updatedAt DateTime @updatedAt
-
-  // ถ้าคิวรีตามเวลาอัปเดตบ่อย ๆ ค่อยเปิดใช้
-  // @@index([updatedAt])
+  // @@index([updatedAt]) // เปิดใช้ถ้าคิวรีบ่อย
 }
 
 // =========================
-//        METRICS
+/*        METRICS          */
 // =========================
 
 model MetricsHourly {
   id           String   @id @default(cuid())
 
   /// ตัวแทนช่วงชั่วโมงแบบ UTC (เช่น 2025-11-11T10:00:00Z)
-  hourUtc      DateTime @index
+  hourUtc      DateTime
 
-  /// ผู้ใช้เป้าหมาย (เว้นว่าง = แถวสรุปทั้งระบบ)
-  userId       String?  @index
+  /// ผู้ใช้เป้าหมาย (ว่าง = แถวสรุปทั้งระบบ)
+  userId       String?
   user         User?    @relation(fields: [userId], references: [id])
 
   pointsEarned Int      @default(0)
@@ -84,18 +82,20 @@ model MetricsHourly {
 
   createdAt    DateTime @default(now())
 
-  // ให้ upsert ได้คีย์เดียวต่อชั่วโมง/ผู้ใช้ (รวมกรณี userId = null)
+  // คีย์ผสมสำหรับ upsert ต่อชั่วโมง/ผู้ใช้ (รวม userId = null)
   @@unique([hourUtc, userId], name: "hourUtc_userId_unique")
+  @@index([hourUtc])
+  @@index([userId])
 }
 
 model MetricsDaily {
   id           String   @id @default(cuid())
 
   /// ตัวแทนช่วงวันแบบ UTC (เช่น 2025-11-11T00:00:00Z)
-  dayUtc       DateTime @index
+  dayUtc       DateTime
 
-  /// ผู้ใช้เป้าหมาย (เว้นว่าง = แถวสรุปทั้งระบบ)
-  userId       String?  @index
+  /// ผู้ใช้เป้าหมาย (ว่าง = แถวสรุปทั้งระบบ)
+  userId       String?
   user         User?    @relation(fields: [userId], references: [id])
 
   pointsEarned Int      @default(0)
@@ -107,4 +107,6 @@ model MetricsDaily {
   createdAt    DateTime @default(now())
 
   @@unique([dayUtc, userId], name: "dayUtc_userId_unique")
+  @@index([dayUtc])
+  @@index([userId])
 }
