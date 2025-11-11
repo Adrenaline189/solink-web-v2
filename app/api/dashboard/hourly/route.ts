@@ -4,10 +4,13 @@ import { prisma } from "@/lib/prisma";
 import type { DashboardRange, HourlyPoint } from "@/types/dashboard";
 import { getHourly as getHourlySim } from "@/lib/dev-sim"; // fallback เมื่อ DB ใช้ไม่ได้
 
-export const dynamic = "force-dynamic"; // บังคับให้รันแบบ SSR ทุกครั้ง (ไม่ใช้ cache)
+// บังคับให้รันแบบ SSR ทุกครั้ง (ไม่ใช้ cache ฝั่ง Next)
+export const dynamic = "force-dynamic";
 
 /* -------------------------- UTC helpers -------------------------- */
-function pad(n: number) { return n < 10 ? `0${n}` : `${n}`; }
+function pad(n: number) {
+  return n < 10 ? `0${n}` : `${n}`;
+}
 
 /** label แบบ MM/DD โดยอิง UTC */
 function mdLabelUTC(d: Date) {
@@ -29,18 +32,17 @@ function addDaysUTC(d: Date, n: number) {
 }
 
 /** แปลงค่าที่อาจเป็น BigInt/nullable ให้เป็น number ปลอดภัย */
-function toNum(v: any): number {
+function toNum(v: unknown): number {
   if (typeof v === "bigint") return Number(v);
   if (typeof v === "number") return v;
-  const n = Number(v ?? 0);
+  const n = Number((v as any) ?? 0);
   return Number.isFinite(n) ? n : 0;
 }
 
 /** จำกัดค่า range ให้อยู่ในชุดที่อนุญาต */
 function normalizeRange(raw: string | null): DashboardRange {
   const v = (raw ?? "today").toLowerCase();
-  if (v === "7d" || v === "30d" || v === "today") return v;
-  return "today";
+  return v === "7d" || v === "30d" || v === "today" ? v : "today";
 }
 
 /* ------------------------------- GET ------------------------------ */
@@ -51,8 +53,8 @@ export async function GET(req: Request) {
 
     // ===== TODAY: คืน 24 bucket (รายชั่วโมง, UTC) =====
     if (range === "today") {
-      const start = startOfUTC();           // วันนี้ 00:00 UTC
-      const end = addDaysUTC(start, 1);     // พรุ่งนี้ 00:00 UTC
+      const start = startOfUTC(); // วันนี้ 00:00 UTC
+      const end = addDaysUTC(start, 1); // พรุ่งนี้ 00:00 UTC
 
       // เตรียม 24 ช่อง
       const buckets: HourlyPoint[] = Array.from({ length: 24 }, (_, h) => ({
@@ -73,7 +75,7 @@ export async function GET(req: Request) {
         }
 
         return NextResponse.json(buckets, {
-          // อนุญาต revalidate ฝั่ง CDN แบบทันที (ให้พฤติกรรมเหมือนที่คุณเช็คเห็น)
+          // ให้พฤติกรรม cache แบบ validate ทุกครั้ง (สอดคล้องกับที่คุณเช็ก)
           headers: { "Cache-Control": "public, max-age=0, must-revalidate" },
         });
       } catch {
@@ -86,8 +88,8 @@ export async function GET(req: Request) {
 
     // ===== 7D / 30D: รวมยอดรายวัน (UTC) =====
     const days = range === "7d" ? 7 : 30;
-    const end = addDaysUTC(startOfUTC(), 1);  // พรุ่งนี้ 00:00 UTC
-    const start = addDaysUTC(end, -days);     // n วันก่อนหน้า
+    const end = addDaysUTC(startOfUTC(), 1); // พรุ่งนี้ 00:00 UTC
+    const start = addDaysUTC(end, -days); // n วันก่อนหน้า
 
     // สร้าง labels ไล่จากเก่าสุด → ปัจจุบัน-1วัน (รวมทั้งหมด days วัน)
     const labels: string[] = [];
@@ -114,7 +116,7 @@ export async function GET(req: Request) {
         points: daily.get(lbl) ?? 0,
       }));
 
-      // ถ้าทั้งช่วงเป็นศูนย์หมด ให้ fallback เพื่อให้กราฟไม่โล่ง
+      // ถ้าทั้งช่วงเป็นศูนย์หมด ให้ fallback เพื่อให้กราฟไม่โล่งบน demo
       if (out.every((x) => x.points === 0)) {
         return NextResponse.json(getHourlySim(range), {
           headers: { "Cache-Control": "public, max-age=0, must-revalidate" },
