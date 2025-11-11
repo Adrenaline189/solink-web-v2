@@ -1,4 +1,3 @@
-// lib/solana/WalletProviders.tsx
 'use client';
 
 import '@solana/wallet-adapter-react-ui/styles.css';
@@ -11,7 +10,7 @@ import { WalletModalProvider } from '@solana/wallet-adapter-react-ui';
 import {
   PhantomWalletAdapter,
   SolflareWalletAdapter,
-  BackpackWalletAdapter,
+  // BackpackWalletAdapter,  // ❌ ลบออก: ไม่มีใน @solana/wallet-adapter-wallets
 } from '@solana/wallet-adapter-wallets';
 import { clusterApiUrl } from '@solana/web3.js';
 
@@ -26,7 +25,7 @@ export default function WalletProviders({ children }: Props) {
     () => [
       new PhantomWalletAdapter(),
       new SolflareWalletAdapter({ network: 'mainnet-beta' }),
-      new BackpackWalletAdapter(),
+      // new BackpackWalletAdapter(), // ❌ ลบออก
     ],
     []
   );
