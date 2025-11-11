@@ -11,5 +11,4 @@ export const NAV_ITEMS = [
   { key: "ir",        label: "IR",        href: "/ir" },
   { key: "contact",   label: "Contact",   href: "/contact" },
   { key: "dashboard", label: "Dashboard", href: "/dashboard" },
-  { key: "settings",  label: "Settings",  href: "/settings" },
 ] as const satisfies ReadonlyArray<NavItem>;
