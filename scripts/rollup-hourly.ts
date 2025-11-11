@@ -46,10 +46,10 @@ export function startHourlyWorker() {
 
       // สรุปภาพรวมทั้งระบบ (userId = null)
       await prisma.metricsHourly.upsert({
-        where: { hourUtc_userId_unique: { hourUtc: hourStart, userId: null } },
+        where: { hourUtc_userId_unique: { hourUtc: hourStart, userId: "GLOBAL" } },
         create: {
           hourUtc: hourStart,
-          userId: null,
+          userId: "GLOBAL",
           pointsEarned: total,
           qfScore: Math.sqrt(Math.max(total, 0)),
         },
@@ -90,14 +90,14 @@ export function startHourlyWorker() {
 
       const sumDay = await prisma.metricsHourly.aggregate({
         _sum: { pointsEarned: true },
-        where: { hourUtc: { gte: dayStart, lt: dayEnd }, userId: null },
+        where: { hourUtc: { gte: dayStart, lt: dayEnd }, userId: "GLOBAL" },
       });
 
       await prisma.metricsDaily.upsert({
-        where: { dayUtc_userId_unique: { dayUtc: dayStart, userId: null } },
+        where: { dayUtc_userId_unique: { dayUtc: dayStart, userId: "GLOBAL" } },
         create: {
           dayUtc: dayStart,
-          userId: null,
+          userId: "GLOBAL",
           pointsEarned: sumDay._sum.pointsEarned ?? 0,
         },
         update: {
