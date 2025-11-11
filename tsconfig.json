@@ -9,9 +9,11 @@
     "noEmit": true,
     "skipLibCheck": true,
     "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
     "resolveJsonModule": true,
     "isolatedModules": true,
     "jsx": "preserve",
+    "verbatimModuleSyntax": true,
 
     "allowJs": true,
     "incremental": true,
@@ -20,11 +22,15 @@
     "baseUrl": ".",
     "paths": {
       "@/*": ["./*"],
-      "@/types/*": ["types/*"],
+      "@/app/*": ["app/*"],
+      "@/components/*": ["components/*"],
       "@/lib/*": ["lib/*"],
-      "@/components/*": ["components/*"]
+      "@/server/*": ["server/*"],
+      "@/scripts/*": ["scripts/*"],
+      "@/types/*": ["types/*"]
     },
 
+    "types": ["node"],
     "plugins": [{ "name": "next" }]
   },
   "include": [
@@ -32,8 +38,15 @@
     "app/**/*",
     "components/**/*",
     "lib/**/*",
+    "server/**/*",
+    "scripts/**/*",
+    "types/**/*",
+    "**/*.ts",
     "**/*.tsx",
     ".next/types/**/*.ts"
   ],
-  "exclude": ["node_modules", ".next", "scripts/**/*"]
+  "exclude": [
+    "node_modules",
+    ".next"
+  ]
 }
