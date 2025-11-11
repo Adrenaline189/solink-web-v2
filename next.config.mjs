@@ -1,8 +1,6 @@
-// next.config.mjs
 /** @type {import('next').NextConfig} */
 
-// ใช้ alias env แทน TZ (Vercel กันชื่อ TZ ไว้)
-// ตั้งที่ Vercel เป็น NEXT_PUBLIC_SOLINK_TIMEZONE=UTC (หรือ SOLINK_TIMEZONE=UTC ก็ได้)
+// ป้องกัน ENV ชื่อ TZ ชนกับระบบของ Vercel
 const TZ =
   process.env.NEXT_PUBLIC_SOLINK_TIMEZONE ||
   process.env.SOLINK_TIMEZONE ||
@@ -10,11 +8,11 @@ const TZ =
 
 const nextConfig = {
   experimental: {
-    // ยังเปิด typedRoutes ได้ตามปกติ
+    // ใช้ได้ต่อปกติ
     typedRoutes: true,
   },
 
-  // ส่งค่า timezone ไปฝั่ง client แบบ build-time safe
+  // ส่งค่า timezone ไปฝั่ง client แบบปลอดภัย (อ่านได้จาก process.env.NEXT_PUBLIC_SOLINK_TIMEZONE)
   env: {
     NEXT_PUBLIC_SOLINK_TIMEZONE: TZ,
   },
@@ -22,11 +20,11 @@ const nextConfig = {
   async headers() {
     return [
       {
-        source: "/(.*)",
+        source: "/(.*)", // ครอบทุกหน้าและ API
         headers: [
+          /* -------- Security Essentials -------- */
           { key: "X-Content-Type-Options", value: "nosniff" },
           { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
-          // ให้ฝังในโดเมนตัวเองได้ (ตรงกับที่ Vercel ตอบกลับ)
           { key: "X-Frame-Options", value: "SAMEORIGIN" },
           {
             key: "Strict-Transport-Security",
@@ -37,7 +35,12 @@ const nextConfig = {
             value:
               "accelerometer=(), camera=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=()",
           },
-          // CSP ให้สอดคล้องกับ response บน Vercel (รองรับ vercel.live + vitals)
+
+          /* -------- Isolation for perf/safety -------- */
+          { key: "Cross-Origin-Opener-Policy", value: "same-origin" },
+          { key: "Cross-Origin-Embedder-Policy", value: "require-corp" },
+
+          /* -------- CSP (ให้ตรงกับที่ Vercel response) -------- */
           {
             key: "Content-Security-Policy",
             value: [
@@ -49,6 +52,8 @@ const nextConfig = {
               "style-src 'self' 'unsafe-inline'",
               "script-src 'self' 'unsafe-inline' vercel.live https://vitals.vercel-insights.com",
               "connect-src 'self' https://vitals.vercel-insights.com https://vercel.live ws: wss:",
+              "object-src 'none'",
+              "form-action 'self'",
               "upgrade-insecure-requests",
             ].join("; "),
           },
