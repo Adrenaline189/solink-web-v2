@@ -1,3 +1,4 @@
+// app/api/dashboard/summary/route.ts
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
@@ -40,14 +41,39 @@ export async function GET() {
     });
     const totalPoints = toNum(totalAgg._sum.balance);
 
+    // --- QF / Trust (เดโม) ---
+    // QF: ใช้ qfScore ล่าสุดของ system ในวันนี้ (ถ้าไม่มีให้เป็น 0)
+    let qf = 0;
+    let trust = 0;
+
+    try {
+      const lastSystemHour = await prisma.metricsHourly.findFirst({
+        where: { userId: "system", hourUtc: { gte: start, lt: end } },
+        orderBy: { hourUtc: "desc" },
+        select: { qfScore: true },
+      });
+      qf = Math.max(0, Math.min(100, Math.round(lastSystemHour?.qfScore ?? 0)));
+
+      // Trust (เดโม): (#ชั่วโมงที่ system มีแต้ม > 0 วันนี้) * 5 (ค่าสูงสุด 100)
+      const nonZeroHours = await prisma.metricsHourly.count({
+        where: {
+          userId: "system",
+          hourUtc: { gte: start, lt: end },
+          pointsEarned: { gt: 0 },
+        },
+      });
+      trust = Math.max(0, Math.min(100, nonZeroHours * 5));
+    } catch {
+      // ถ้า schema metrics ยังไม่พร้อม ให้คงค่า 0 ไว้
+      qf = 0;
+      trust = 0;
+    }
+
     // หมายเหตุ: ค่าอื่นๆ ด้านล่างยังเป็น placeholder/เดโม่
-    // ปรับให้ดึงจากแหล่งจริงเมื่อพร้อม
     const slk = Number((totalPoints / 1000).toFixed(2));
     const uptimeHours = 0;
     const goalHours = 8;
     const avgBandwidthMbps = 0;
-    const qf = 0;
-    const trust = 0;
 
     // (ตัวเลือก) system meta: ถ้ามีตาราง setting ก็อ่าน ไม่มีก็คืน null
     let region: string | null = null;
@@ -63,7 +89,6 @@ export async function GET() {
       ip = ipSetting?.value ?? null;
       version = verSetting?.value ?? null;
     } catch {
-      // ถ้าไม่มีตาราง/คอลัมน์ดังกล่าว ให้เงียบไว้และคืนเป็น null
       region = null;
       ip = null;
       version = null;

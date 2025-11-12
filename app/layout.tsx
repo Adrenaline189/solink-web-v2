@@ -18,8 +18,11 @@ import { Analytics } from "@vercel/analytics/react";
 import { SpeedInsights } from "@vercel/speed-insights/next";
 import Aurora from "@/components/Aurora";
 
-/* ✅  provider  Solana  wallet all app */
+/* ✅ Solana wallet provider (คงไว้) */
 import WalletProviders from "@/lib/solana/WalletProviders";
+
+/* ✅ รวม React Query + wagmi + RainbowKit */
+import Providers from "./providers";
 
 /* ====== Metadata (run server) ====== */
 const metadataBaseUrl =
@@ -96,54 +99,58 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       </head>
 
       <body className="min-h-screen bg-slate-950 text-slate-100 relative">
-        <WalletProviders>
-          <Aurora />
+        {/* ✅ ครอบ React Query + wagmi + RainbowKit */}
+        <Providers>
+          {/* ✅ ซ้อน Solana wallet providers ไว้ข้างใน */}
+          <WalletProviders>
+            <Aurora />
 
-          <Suspense fallback={null}>
-            <HtmlPrefSync />
-          </Suspense>
-
-          <a
-            href="#content"
-            className="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-50 focus:rounded-md focus:bg-slate-800 focus:px-3 focus:py-2"
-          >
-            Skip to content
-          </a>
-
-          <header className="sticky top-0 z-40 border-b border-slate-800 bg-slate-950/70 backdrop-blur supports-[backdrop-filter]:bg-slate-950/60 overflow-visible">
-            <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-3 overflow-visible">
-              <div className="flex items-center gap-8 overflow-visible">
-                <Link href="/" className="flex items-center gap-3">
-                  <Image
-                    src={logo}
-                    alt="Solink"
-                    width={32}
-                    height={32}
-                    className="h-8 w-8 rounded-lg object-contain"
-                    priority
-                  />
-                  <span className="text-lg font-semibold">Solink</span>
-                </Link>
-                <MainNav items={[...NAV_ITEMS]} />
-              </div>
-
-              {/* ❌ Connect Navbar*/}
-              <div className="flex items-center gap-3">
-                <RefBadge />
-                <MobileMenu items={[...NAV_ITEMS]} />
-              </div>
-            </div>
-          </header>
-
-          <main id="content" className="relative z-10">
-            <Suspense fallback={<div className="p-6 text-slate-400">Loading…</div>}>
-              {children}
+            <Suspense fallback={null}>
+              <HtmlPrefSync />
             </Suspense>
-          </main>
 
-          <Analytics />
-          <SpeedInsights />
-        </WalletProviders>
+            <a
+              href="#content"
+              className="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-50 focus:rounded-md focus:bg-slate-800 focus:px-3 focus:py-2"
+            >
+              Skip to content
+            </a>
+
+            <header className="sticky top-0 z-40 border-b border-slate-800 bg-slate-950/70 backdrop-blur supports-[backdrop-filter]:bg-slate-950/60 overflow-visible">
+              <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-3 overflow-visible">
+                <div className="flex items-center gap-8 overflow-visible">
+                  <Link href="/" className="flex items-center gap-3">
+                    <Image
+                      src={logo}
+                      alt="Solink"
+                      width={32}
+                      height={32}
+                      className="h-8 w-8 rounded-lg object-contain"
+                      priority
+                    />
+                    <span className="text-lg font-semibold">Solink</span>
+                  </Link>
+                  <MainNav items={[...NAV_ITEMS]} />
+                </div>
+
+                {/* ❌ Connect Navbar (ตอนนี้ซ่อนปุ่มเชื่อมต่อบนแถบเมนู) */}
+                <div className="flex items-center gap-3">
+                  <RefBadge />
+                  <MobileMenu items={[...NAV_ITEMS]} />
+                </div>
+              </div>
+            </header>
+
+            <main id="content" className="relative z-10">
+              <Suspense fallback={<div className="p-6 text-slate-400">Loading…</div>}>
+                {children}
+              </Suspense>
+            </main>
+
+            <Analytics />
+            <SpeedInsights />
+          </WalletProviders>
+        </Providers>
       </body>
     </html>
   );

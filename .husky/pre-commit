@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# --- 1) บล็อกถ้า .env ถูก stage (ทุกชื่อที่ขึ้นต้นด้วย .env) ---
+if git diff --cached --name-only | grep -E '(^|/)\.env($|\.)' >/dev/null; then
+  echo "❌ Blocking commit: .env* must not be committed"
+  exit 1
+fi
+
+# --- 2) รวบรวมเฉพาะ 'บรรทัดที่เพิ่ม' ในไฟล์ที่ถูก stage (Add/Copy/Modify/Rename) ---
+# ตัดหัวข้อไฟล์ + บรรทัดว่างออก เหลือเฉพาะบรรทัดที่ขึ้นต้นด้วย '+' จริง ๆ
+STAGED_ADDED_LINES="$(git diff --cached --diff-filter=ACMR -U0 | grep '^+' | grep -vE '^\+\+\+|^\+$' || true)"
+
+# --- 3) อนุญาตไฟล์ตัวอย่าง/สคริปต์เดโม (allowlist) ไม่ต้องสแกน ---
+# ถ้าทั้ง diff มีแต่ไฟล์ในพาธเหล่านี้ ให้ข้ามการตรวจ (ลด false positive)
+ONLY_ALLOWLISTED=$(git diff --cached --name-only | grep -vE '(^(scripts/|examples/|demo/)|(^|/)README\.md$)' || true)
+if [ -z "$ONLY_ALLOWLISTED" ]; then
+  echo "✅ pre-commit OK (only allowlisted files changed)"
+  exit 0
+fi
+
+# --- 4) ถ้าไม่มีบรรทัดเพิ่มเลย ก็ผ่าน ---
+if [ -z "$STAGED_ADDED_LINES" ]; then
+  echo "✅ pre-commit OK (no added lines)"
+  exit 0
+fi
+
+# --- 5) ตรวจหา secret 'จริงจัง' ในบรรทัดที่ถูกเพิ่มเท่านั้น ---
+#    - URL ของ DB/Redis ที่เป็นค่าจริง (เริ่มด้วย postgresql://, mysql://, rediss://, redis://, mongodb://)
+#    - คีย์/โทเค็นที่เจอบ่อย (JWT base64 header, GitHub PAT, Slack token, OpenAI, RSA/EC PRIVATE KEY)
+# **หมายเหตุ**: ไม่บล็อกแค่คำว่า DATABASE_URL เฉย ๆ เพื่อเลี่ยง false positive
+PATTERN='(
+  postgresql:\/\/|
+  mysql:\/\/|
+  rediss?:\/\/|
+  mongodb(\+srv)?:\/\/|
+  sk-live-|sk-proj-|sk-[A-Za-z0-9]{20,}|
+  ghp_[A-Za-z0-9]{36}|
+  xoxb-[0-9A-Za-z-]{20,}|
+  eyJhbGciOi|        # JWT header base64 บ่อยมาก
+  BEGIN\ (RSA|EC)\ PRIVATE\ KEY
+)'
+
+if echo "$STAGED_ADDED_LINES" | grep -E -i -q "$PATTERN"; then
+  echo "❌ Blocking commit: possible secret detected in added lines"
+  echo ""
+  echo "   Tips:"
+  echo "   - ใส่ค่าจริงไว้ใน .env / .env.local เท่านั้น (ไฟล์พวกนี้ถูก .gitignore ไว้แล้ว)"
+  echo "   - ถ้าจำเป็นต้องมีตัวอย่าง ให้ใส่ใน .env.example โดยใช้ค่าหลอกๆ"
+  exit 1
+fi
+
+echo "✅ pre-commit OK"

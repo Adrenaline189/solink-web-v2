@@ -5,3 +5,7 @@ node_modules
 .next/
 scripts/logs/
 next/
+.env
+.env.*
+*.pem
+*.key

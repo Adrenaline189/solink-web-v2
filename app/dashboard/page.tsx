@@ -8,12 +8,12 @@ const WalletMultiButton = NextDynamic(
   { ssr: false }
 );
 
-import { Suspense, useEffect, useState, useCallback } from "react";
+import { Suspense, useEffect, useState, useCallback, useMemo } from "react";
 export const dynamic = "force-dynamic";
 
 import { Card, CardContent } from "../../components/ui/card";
 import { Button } from "../../components/ui/button";
-import { Link2, Gauge, Award, Activity, Cloud, TrendingUp } from "lucide-react";
+import { Link2, Gauge, Award, Activity, Cloud, TrendingUp, BarChart4, Bug } from "lucide-react";
 
 import EarnTester from "@/components/EarnTester";
 import TurboFarm from "@/components/TurboFarm";
@@ -25,8 +25,28 @@ import HourlyPoints from "../../components/charts/HourlyPoints";
 import { useWallet } from "@solana/wallet-adapter-react";
 import { usePrefs } from "../../lib/prefs-client";
 
+/* Recharts (ใช้สำหรับกราฟ System Hourly จาก /api/dashboard/metrics) */
+import {
+  ResponsiveContainer,
+  AreaChart,
+  Area,
+  CartesianGrid,
+  XAxis,
+  YAxis,
+  Tooltip,
+  ReferenceLine,
+} from "recharts";
+
 /* ---------------------------------- page ----------------------------------- */
+type SystemHourRow = { hourUtc: string; pointsEarned: number };
+type SystemMetricsResp = {
+  ok: boolean;
+  daily: { dayUtc: string; pointsEarned: number } | null;
+  hourly: SystemHourRow[];
+};
+
 function DashboardInner() {
+  // เดิม
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
   const [hourly, setHourly] = useState<HourlyPoint[]>([]);
   const [txData, setTxData] = useState<Tx[]>([]);
@@ -41,6 +61,15 @@ function DashboardInner() {
   const address = publicKey?.toBase58();
   const [refLink, setRefLink] = useState("");
   const [copied, setCopied] = useState(false);
+
+  // ---- ใหม่: state สำหรับ System Metrics (GLOBAL) ----
+  const [sysLoading, setSysLoading] = useState(true);
+  const [sysError, setSysError] = useState<string | null>(null);
+  const [sysDaily, setSysDaily] = useState<number>(0);
+  const [sysHourly, setSysHourly] = useState<SystemHourRow[]>([]);
+
+  // refetch interval (ms)
+  const SYS_REFRESH_MS = 30_000;
 
   useEffect(() => {
     const origin =
@@ -99,6 +128,33 @@ function DashboardInner() {
     return cleanup;
   }, [refresh]);
 
+  // ---- ใหม่: โหลด System Metrics จาก /api/dashboard/metrics + auto refresh ----
+  const loadSystemMetrics = useCallback(async (signal?: AbortSignal) => {
+    try {
+      setSysLoading(true);
+      const res = await fetch("/api/dashboard/metrics", { cache: "no-store", signal });
+      if (!res.ok) throw new Error("Failed to fetch /api/dashboard/metrics");
+      const json: SystemMetricsResp = await res.json();
+      setSysDaily(json.daily?.pointsEarned ?? 0);
+      setSysHourly(Array.isArray(json.hourly) ? json.hourly : []);
+      setSysError(null);
+    } catch (e: any) {
+      setSysError(e?.message || "Failed to fetch metrics");
+    } finally {
+      setSysLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    const ac = new AbortController();
+    loadSystemMetrics(ac.signal);
+    const t = setInterval(() => loadSystemMetrics(), SYS_REFRESH_MS);
+    return () => {
+      ac.abort();
+      clearInterval(t);
+    };
+  }, [loadSystemMetrics]);
+
   const copy = async () => {
     try {
       await navigator.clipboard.writeText(refLink);
@@ -108,6 +164,20 @@ function DashboardInner() {
   };
 
   const nodeStatus = connected ? "● Connected" : "○ Disconnected";
+
+  // เตรียมข้อมูลสำหรับกราฟ System Hourly (UTC)
+  const sysRows = useMemo(
+    () =>
+      sysHourly.map((r) => ({
+        hour: new Date(r.hourUtc).getUTCHours().toString().padStart(2, "0") + ":00",
+        points: r.pointsEarned,
+      })),
+    [sysHourly]
+  );
+  const sysPeak = useMemo(
+    () => sysRows.reduce((m, r) => Math.max(m, r.points), 0),
+    [sysRows]
+  );
 
   return (
     <div className="min-h-screen text-slate-100 p-6">
@@ -120,7 +190,7 @@ function DashboardInner() {
             {err && <p className="text-rose-400 text-sm mt-1">Error: {err}</p>}
           </div>
 
-          {/* ทำให้ WalletMultiButton สูงเท่าปุ่ม Start Sharing */}
+        {/* ทำให้ WalletMultiButton สูงเท่าปุ่ม Start Sharing */}
           <div className="wa-equal flex items-center gap-3">
             <WalletMultiButton />
             <Button variant="secondary" className="rounded-2xl px-5 h-12">
@@ -130,9 +200,10 @@ function DashboardInner() {
         </div>
 
         {/* Test Blocks */}
-        <div className="mb-6">
+        <div className="mb-6 space-y-4">
           <EarnTester />
           <TurboFarm />
+          <DevPanel /> {/* ✅ แถบทดสอบฝังในไฟล์นี้ */}
         </div>
 
         {/* KPI Cards */}
@@ -169,11 +240,12 @@ function DashboardInner() {
 
         {/* Charts + Quality Panel */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
+          {/* เดิม: กราฟผู้ใช้ (ผูกกับ lib/data/dashboard) */}
           <Card className="lg:col-span-2">
             <CardContent className="p-5">
               <div className="flex items-center justify-between mb-3">
                 <h3 className="text-lg font-semibold flex items-center gap-2">
-                  <Gauge className="h-4 w-4" /> Hourly Points
+                  <Gauge className="h-4 w-4" /> Hourly Points (User)
                 </h3>
                 <span className="text-xs text-slate-400">{tz}</span>
               </div>
@@ -190,6 +262,58 @@ function DashboardInner() {
               <div className="text-sm text-slate-400 mt-2">
                 Note: QF considers p50 latency, jitter, and session stability.
               </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* ใหม่: System (GLOBAL) Hourly จาก /api/dashboard/metrics */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
+          <Card className="lg:col-span-3">
+            <CardContent className="p-5">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-lg font-semibold flex items-center gap-2">
+                  <BarChart4 className="h-4 w-4" /> System Hourly (UTC)
+                </h3>
+                <div className="text-xs text-slate-400">
+                  Today Total: {sysLoading ? "—" : sysDaily.toLocaleString()} pts
+                </div>
+              </div>
+
+              <div className="w-full h-72 rounded-2xl border border-slate-800 bg-slate-950/40 p-2">
+                {sysLoading ? (
+                  <div className="flex h-full items-center justify-center text-slate-500">Loading…</div>
+                ) : sysError ? (
+                  <div className="text-rose-400">{sysError}</div>
+                ) : (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart data={sysRows} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
+                      <defs>
+                        <linearGradient id="sysG" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopOpacity={0.35} />
+                          <stop offset="95%" stopOpacity={0.05} />
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis dataKey="hour" />
+                      <YAxis allowDecimals={false} />
+                      <Tooltip
+                        formatter={(v: number) => [v.toLocaleString() + " pts", "Points"]}
+                        labelFormatter={(l) => `UTC ${l}`}
+                      />
+                      <ReferenceLine y={0} />
+                      <Area
+                        type="monotone"
+                        dataKey="points"
+                        stroke="currentColor"
+                        strokeWidth={2}
+                        fillOpacity={1}
+                        fill="url(#sysG)"
+                      />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                )}
+              </div>
+              <div className="mt-2 text-xs text-slate-500">Peak hour: {sysPeak.toLocaleString()} pts</div>
             </CardContent>
           </Card>
         </div>
@@ -289,6 +413,77 @@ function DashboardInner() {
         </footer>
       </div>
     </div>
+  );
+}
+
+/* --------------------------- DevPanel (inline) --------------------------- */
+function DevPanel() {
+  const [status, setStatus] = useState<{
+    ok?: boolean;
+    daily?: number;
+    hourlyCount?: number;
+    tookMs?: number;
+    at?: string;
+    err?: string;
+  }>({});
+
+  const testMetrics = async () => {
+    const t0 = performance.now();
+    try {
+      const res = await fetch("/api/dashboard/metrics", { cache: "no-store" });
+      const tookMs = Math.round(performance.now() - t0);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const json: SystemMetricsResp = await res.json();
+      setStatus({
+        ok: true,
+        daily: json.daily?.pointsEarned ?? 0,
+        hourlyCount: json.hourly?.length ?? 0,
+        tookMs,
+        at: new Date().toLocaleTimeString(),
+      });
+    } catch (e: any) {
+      setStatus({ ok: false, err: e?.message || "fetch failed" });
+    }
+  };
+
+  return (
+    <Card>
+      <CardContent className="p-5">
+        <div className="flex items-center justify-between">
+          <h3 className="text-lg font-semibold flex items-center gap-2">
+            <Bug className="h-4 w-4" /> Dev Panel
+          </h3>
+          <div className="text-xs text-slate-500">Quick checks</div>
+        </div>
+
+        <div className="mt-3 flex flex-wrap gap-2">
+          <Button onClick={testMetrics} className="rounded-xl">Ping /api/dashboard/metrics</Button>
+          <a
+            href="/api/dashboard/metrics"
+            target="_blank"
+            rel="noreferrer"
+            className="rounded-xl border border-slate-700 px-3 py-2 text-sm bg-slate-900/60 hover:bg-slate-800"
+            title="Open metrics JSON in new tab"
+          >
+            Open JSON
+          </a>
+        </div>
+
+        <div className="mt-3 text-sm">
+          {status.ok === undefined && <div className="text-slate-400">Press “Ping” to test.</div>}
+          {status.ok === true && (
+            <div className="space-y-1">
+              <div className="text-emerald-400">✓ Metrics OK ({status.tookMs} ms at {status.at})</div>
+              <div className="text-slate-300">Daily total: <b>{(status.daily ?? 0).toLocaleString()}</b> pts</div>
+              <div className="text-slate-300">Hourly rows: <b>{status.hourlyCount}</b></div>
+            </div>
+          )}
+          {status.ok === false && (
+            <div className="text-rose-400">✗ Failed: {status.err}</div>
+          )}
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 
