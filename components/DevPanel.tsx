@@ -1,3 +1,4 @@
+// components/DevPanel.tsx
 "use client";
 
 import { useMemo } from "react";
@@ -18,11 +19,9 @@ type MetricsResp = {
 export default function DevPanel() {
   const qc = useQueryClient();
 
-  // --- Wallets ---
   const { publicKey, connected } = useSolanaWallet();
   const solAddr = publicKey?.toBase58() ?? null;
 
-  // --- React Query hello ---
   const hello = useQuery({
     queryKey: ["dev-hello"],
     queryFn: async () => {
@@ -32,7 +31,6 @@ export default function DevPanel() {
     refetchInterval: 10_000,
   });
 
-  // --- Metrics ---
   const metrics = useQuery<MetricsResp>({
     queryKey: ["metrics"],
     queryFn: () => getJSON<MetricsResp>("/api/dashboard/metrics"),
@@ -45,7 +43,6 @@ export default function DevPanel() {
     return h.length ? h[h.length - 1].pointsEarned : 0;
   }, [metrics.data]);
 
-  // --- Enqueue rollup ---
   const enqueue = useMutation({
     mutationFn: () => postJSON<{ ok: boolean; queued: boolean }>("/api/cron/rollup-hourly"),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["metrics"] }),
@@ -62,7 +59,6 @@ export default function DevPanel() {
           </div>
         </div>
 
-        {/* Wallets row */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           <div className="rounded-xl border border-slate-800 p-4">
             <div className="flex items-center gap-2 mb-2">
@@ -71,9 +67,7 @@ export default function DevPanel() {
             </div>
             <div className="text-sm text-slate-300">
               {connected ? (
-                <>
-                  Connected: <span className="text-sky-300">{solAddr?.slice(0, 6)}…{solAddr?.slice(-6)}</span>
-                </>
+                <>Connected: <span className="text-sky-300">{solAddr?.slice(0, 6)}…{solAddr?.slice(-6)}</span></>
               ) : (
                 "Not connected"
               )}
@@ -85,20 +79,17 @@ export default function DevPanel() {
               <WalletMinimal className="h-4 w-4" />
               <div className="font-semibold">EVM Wallet (RainbowKit)</div>
             </div>
-            <ConnectButton.AccountStatus />
+            <ConnectButton accountStatus="avatar" chainStatus="icon" showBalance={false} />
           </div>
         </div>
 
-        {/* Metrics quick glance */}
         <div className="rounded-xl border border-slate-800 p-4">
           <div className="flex items-center justify-between mb-2">
             <div className="flex items-center gap-2">
               <Database className="h-4 w-4" />
               <div className="font-semibold">Metrics Snapshot</div>
             </div>
-            <Button
-              size="sm"
-              variant="secondary"
+            <Button className="h-8 px-3" variant="secondary"
               onClick={() => qc.invalidateQueries({ queryKey: ["metrics"] })}
             >
               <RefreshCw className="h-4 w-4 mr-1" /> Refresh
@@ -119,21 +110,12 @@ export default function DevPanel() {
           </div>
         </div>
 
-        {/* Actions */}
         <div className="flex flex-wrap gap-2">
-          <Button
-            onClick={() => hello.refetch()}
-            variant="secondary"
-            title="/api/dev/ping"
-          >
+          <Button onClick={() => hello.refetch()} variant="secondary" title="/api/dev/ping">
             <RefreshCw className="h-4 w-4 mr-2" /> Ping API
           </Button>
 
-          <Button
-            onClick={() => enqueue.mutate()}
-            disabled={enqueue.isPending}
-            title="/api/cron/rollup-hourly"
-          >
+          <Button onClick={() => enqueue.mutate()} disabled={enqueue.isPending} title="/api/cron/rollup-hourly">
             <Rocket className="h-4 w-4 mr-2" />
             {enqueue.isPending ? "Enqueue…" : "Enqueue Rollup"}
           </Button>

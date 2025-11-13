@@ -1,121 +1,90 @@
-// app/api/cron/rollup-hourly/route.ts
-import { NextRequest, NextResponse } from "next/server";
-// 👇 เปลี่ยนชื่อฟังก์ชัน/ที่อยู่ import ให้ตรงกับโปรเจกต์จริง ถ้าต่างจากนี้
-import { enqueueRollupHourlyJob } from "@/lib/rollup-queue";
+import { NextResponse } from "next/server";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
-// ----- Helper: อ่าน secret ที่ใช้ตรวจสอบ -----
+/**
+ * IMPORTANT:
+ * - Do NOT import "@/scripts/rollup-hourly" at the top level.
+ *   Always lazy-import inside the handler to avoid touching Redis during build.
+ */
+
 function getCronSecret(): string | null {
-  // คุณจะตั้งตัวไหนบน Vercel ก็ได้ อันนี้รองรับหลายชื่อ
-  return (
-    process.env.CRON_SECRET ??
-    process.env.CRON_KEY ??
-    process.env.CRON_TOKEN ??
-    null
-  );
+  // รองรับทั้ง CRON_SECRET และ CRON_KEY เผื่อใช้คนละชื่อระหว่าง local / Vercel
+  return process.env.CRON_SECRET ?? process.env.CRON_KEY ?? null;
 }
 
-// ----- Helper: ตรวจว่ามาจาก Cron จริงหรือไม่ -----
-function isAuthorized(req: NextRequest): boolean {
+function isAuthorized(request: Request): boolean {
   const secret = getCronSecret();
-  if (!secret) {
-    // ถ้าไม่มี secret ให้ reject ไปก่อน ป้องกันเผลอเปิด endpoint ทิ้งไว้
-    return false;
-  }
+  if (!secret) return false;
 
-  // 1) รองรับ Vercel Cron: ใช้ Authorization: Bearer <secret>
-  const auth =
-    req.headers.get("authorization") ?? req.headers.get("Authorization");
-  const bearerToken =
-    auth && auth.startsWith("Bearer ") ? auth.slice("Bearer ".length) : null;
+  // 1) รองรับ Authorization: Bearer <secret> (เหมาะกับ Vercel Cron)
+  const authHeader =
+    request.headers.get("authorization") ??
+    request.headers.get("Authorization");
 
-  if (bearerToken && bearerToken === secret) {
+  if (authHeader && authHeader === `Bearer ${secret}`) {
     return true;
   }
 
-  // 2) รองรับ local cron/launchd: ใช้ X-CRON-KEY: <secret>
-  const xKey =
-    req.headers.get("x-cron-key") ?? req.headers.get("X-CRON-KEY") ?? null;
+  // 2) รองรับ X-CRON-KEY: <secret> (ใช้กับ curl / launchd บนเครื่องเรา)
+  const cronKeyHeader =
+    request.headers.get("x-cron-key") ??
+    request.headers.get("X-CRON-KEY");
 
-  if (xKey && xKey === secret) {
+  if (cronKeyHeader && cronKeyHeader === secret) {
     return true;
   }
 
   return false;
 }
 
-// ----- Logic หลัก: enqueue งาน rollup -----
-async function handleRollup(req: NextRequest) {
-  // รองรับส่ง hourIso มาทาง body (JSON) หรือไม่ส่งก็ได้
+async function enqueue(hourIso?: string) {
+  // lazy import กัน Next ไปแตะ Redis ตอน build
+  const { enqueueHourlyRollup } = await import("@/scripts/rollup-hourly");
+  await enqueueHourlyRollup(hourIso);
+}
+
+// ใช้เรียกแบบ GET ง่ายๆ (เช่นเช็คจาก browser / curl)
+// ต้องส่ง header auth มาด้วยเหมือน POST
+export async function GET(request: Request) {
+  if (!isAuthorized(request)) {
+    return NextResponse.json(
+      { ok: false, error: "unauthorized" },
+      { status: 401 },
+    );
+  }
+
+  await enqueue(); // hourIso = auto
+  return NextResponse.json({ ok: true, queued: true, hourIso: "auto" });
+}
+
+// ใช้กับ Vercel Cron + manual replay (ส่ง hourIso เองได้)
+export async function POST(request: Request) {
+  if (!isAuthorized(request)) {
+    return NextResponse.json(
+      { ok: false, error: "unauthorized" },
+      { status: 401 },
+    );
+  }
+
   let hourIso: string | undefined;
 
   try {
-    if (req.method === "POST") {
-      const body = (await req.json().catch(() => null)) as
-        | { hourIso?: string }
-        | null;
-
-      if (body?.hourIso && typeof body.hourIso === "string") {
-        hourIso = body.hourIso;
-      }
+    const body = await request.json().catch(() => null);
+    if (body && typeof body.hourIso === "string" && body.hourIso.trim() !== "") {
+      hourIso = body.hourIso;
     }
   } catch {
-    // body ไม่ใช่ JSON ก็ปล่อยผ่าน hourIso = undefined → auto
-    hourIso = undefined;
+    // body พังหรือไม่ใช่ JSON → ปล่อยเป็น auto ไป
   }
 
-  // ✳️ เรียก queue ให้ worker ไปทำงานต่อ
-  //   - ถ้าไม่มี hourIso = ให้ worker ตัดสินใจเอง (auto = current/previous hour)
-  //   - ถ้ามี hourIso = บังคับ rollup ชม.นั้น (ที่คุณ loop ยิงไปทีละชั่วโมง)
-  const job = await enqueueRollupHourlyJob(
-    hourIso ? { hourIso } : undefined
-  );
+  await enqueue(hourIso);
 
   return NextResponse.json({
     ok: true,
     queued: true,
     hourIso: hourIso ?? "auto",
-    jobId: job?.id ?? null,
   });
-}
-
-// ----- Handler สำหรับ POST (หลักที่ใช้จริง) -----
-export async function POST(req: NextRequest) {
-  if (!isAuthorized(req)) {
-    return NextResponse.json(
-      { ok: false, error: "unauthorized" },
-      { status: 401 }
-    );
-  }
-
-  try {
-    return await handleRollup(req);
-  } catch (err) {
-    console.error("[cron/rollup-hourly] error:", err);
-    return NextResponse.json(
-      { ok: false, error: "internal_error" },
-      { status: 500 }
-    );
-  }
-}
-
-// ----- เพิ่ม GET เผื่อ Vercel Cron เรียกแบบ GET -----
-export async function GET(req: NextRequest) {
-  if (!isAuthorized(req)) {
-    return NextResponse.json(
-      { ok: false, error: "unauthorized" },
-      { status: 401 }
-    );
-  }
-
-  try {
-    return await handleRollup(req);
-  } catch (err) {
-    console.error("[cron/rollup-hourly] error:", err);
-    return NextResponse.json(
-      { ok: false, error: "internal_error" },
-      { status: 500 }
-    );
-  }
 }

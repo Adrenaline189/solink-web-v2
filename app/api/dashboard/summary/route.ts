@@ -24,28 +24,44 @@ function addDaysUTC(d: Date, n: number) {
 /* ----------------------------- GET ----------------------------- */
 export async function GET() {
   try {
-    // ช่วงวันนี้แบบ UTC: [วันนี้ 00:00 UTC, พรุ่งนี้ 00:00 UTC)
+    // วันนี้แบบ UTC
     const start = startOfUTC();
     const end = addDaysUTC(start, 1);
 
-    // 1) pointsToday (sum amount ของ pointEvent วันนี้ แบบ UTC)
-    const todayAgg = await prisma.pointEvent.aggregate({
-      _sum: { amount: true },
-      where: { createdAt: { gte: start, lt: end } },
-    });
-    const pointsToday = toNum(todayAgg._sum.amount);
+    // ✅ pointsToday: พยายามอ่านจาก MetricsDaily (system) ก่อน
+    let pointsToday = 0;
+    try {
+      const md = await prisma.metricsDaily.findFirst({
+        where: { dayUtc: start, userId: "system" },
+        select: { pointsEarned: true },
+      });
+      pointsToday = toNum(md?.pointsEarned ?? 0);
 
-    // 2) totalPoints (รวมยอด balance ทั้งระบบ)
+      // สำรอง: ถ้ายังไม่มีแถวใน MetricsDaily ให้ sum จาก MetricsHourly ของวันนั้น
+      if (pointsToday === 0) {
+        const mh = await prisma.metricsHourly.aggregate({
+          _sum: { pointsEarned: true },
+          where: {
+            userId: "system",
+            hourUtc: { gte: start, lt: end },
+          },
+        });
+        pointsToday = toNum(mh._sum.pointsEarned);
+      }
+    } catch {
+      // ถ้า schema ยังไม่พร้อม ก็ให้เป็น 0 ไป
+      pointsToday = 0;
+    }
+
+    // รวมยอด balance ทั้งระบบ
     const totalAgg = await prisma.pointBalance.aggregate({
       _sum: { balance: true },
     });
     const totalPoints = toNum(totalAgg._sum.balance);
 
-    // --- QF / Trust (เดโม) ---
-    // QF: ใช้ qfScore ล่าสุดของ system ในวันนี้ (ถ้าไม่มีให้เป็น 0)
+    // --- QF / Trust (เดโมจากชั่วโมงล่าสุดของ system) ---
     let qf = 0;
     let trust = 0;
-
     try {
       const lastSystemHour = await prisma.metricsHourly.findFirst({
         where: { userId: "system", hourUtc: { gte: start, lt: end } },
@@ -54,7 +70,6 @@ export async function GET() {
       });
       qf = Math.max(0, Math.min(100, Math.round(lastSystemHour?.qfScore ?? 0)));
 
-      // Trust (เดโม): (#ชั่วโมงที่ system มีแต้ม > 0 วันนี้) * 5 (ค่าสูงสุด 100)
       const nonZeroHours = await prisma.metricsHourly.count({
         where: {
           userId: "system",
@@ -64,57 +79,51 @@ export async function GET() {
       });
       trust = Math.max(0, Math.min(100, nonZeroHours * 5));
     } catch {
-      // ถ้า schema metrics ยังไม่พร้อม ให้คงค่า 0 ไว้
       qf = 0;
       trust = 0;
     }
 
-    // หมายเหตุ: ค่าอื่นๆ ด้านล่างยังเป็น placeholder/เดโม่
+    // ค่าอื่น (placeholder)
     const slk = Number((totalPoints / 1000).toFixed(2));
     const uptimeHours = 0;
     const goalHours = 8;
     const avgBandwidthMbps = 0;
 
-    // (ตัวเลือก) system meta: ถ้ามีตาราง setting ก็อ่าน ไม่มีก็คืน null
+    // optional: system meta
     let region: string | null = null;
     let ip: string | null = null;
     let version: string | null = null;
     try {
-      const [regionSetting, ipSetting, verSetting] = await Promise.all([
+      const [r, i, v] = await Promise.all([
         prisma.setting.findFirst({ where: { key: "region" } }),
         prisma.setting.findFirst({ where: { key: "ip" } }),
         prisma.setting.findFirst({ where: { key: "version" } }),
       ]);
-      region = regionSetting?.value ?? null;
-      ip = ipSetting?.value ?? null;
-      version = verSetting?.value ?? null;
-    } catch {
-      region = null;
-      ip = null;
-      version = null;
-    }
+      region = r?.value ?? null;
+      ip = i?.value ?? null;
+      version = v?.value ?? null;
+    } catch {}
 
-    const data = {
-      pointsToday,
-      totalPoints,
-      slk,
-      uptimeHours,
-      goalHours,
-      avgBandwidthMbps,
-      qf,
-      trust,
-      region,
-      ip,
-      version,
-    };
-
-    return NextResponse.json(data, {
-      headers: { "Cache-Control": "no-store" },
-    });
+    return NextResponse.json(
+      {
+        pointsToday,
+        totalPoints,
+        slk,
+        uptimeHours,
+        goalHours,
+        avgBandwidthMbps,
+        qf,
+        trust,
+        region,
+        ip,
+        version,
+      },
+      { headers: { "Cache-Control": "no-store" } }
+    );
   } catch (e: any) {
     return NextResponse.json(
       { ok: false, error: e?.message || "internal error" },
-      { status: 500 },
+      { status: 500 }
     );
   }
 }
