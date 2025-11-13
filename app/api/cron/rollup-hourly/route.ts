@@ -40,10 +40,31 @@ function isAuthorized(request: Request): boolean {
   return false;
 }
 
-async function enqueue(hourIso?: string) {
-  // lazy import กัน Next ไปแตะ Redis ตอน build
-  const { enqueueHourlyRollup } = await import("@/scripts/rollup-hourly");
-  await enqueueHourlyRollup(hourIso);
+/**
+ * enqueue แบบที่ใช้ข้างในเท่านั้น
+ * - ยังเป็น async อยู่ปกติ
+ * - แต่เราจะเรียกมันแบบ fire-and-forget จาก handler
+ */
+async function enqueueInternal(hourIso?: string) {
+  try {
+    console.log("[cron] enqueueInternal start", { hourIso });
+    const { enqueueHourlyRollup } = await import("@/scripts/rollup-hourly");
+    await enqueueHourlyRollup(hourIso);
+    console.log("[cron] enqueueInternal done", { hourIso });
+  } catch (err) {
+    console.error("[cron] enqueueInternal error", err);
+  }
+}
+
+/**
+ * helper: fire-and-forget
+ * - ไม่ await เพื่อไม่ให้ request ค้างหรือ timeout
+ */
+function enqueue(hourIso?: string) {
+  // ไม่สนใจผลลัพธ์ ปล่อยให้ไปรันใน background ของ invocation
+  enqueueInternal(hourIso).catch((err) => {
+    console.error("[cron] enqueue background error", err);
+  });
 }
 
 // ใช้เรียกแบบ GET ง่ายๆ (เช่นเช็คจาก browser / curl)
@@ -56,8 +77,14 @@ export async function GET(request: Request) {
     );
   }
 
-  await enqueue(); // hourIso = auto
-  return NextResponse.json({ ok: true, queued: true, hourIso: "auto" });
+  // fire-and-forget
+  enqueue(); // hourIso = auto
+
+  return NextResponse.json({
+    ok: true,
+    queued: true,
+    hourIso: "auto",
+  });
 }
 
 // ใช้กับ Vercel Cron + manual replay (ส่ง hourIso เองได้)
@@ -80,7 +107,8 @@ export async function POST(request: Request) {
     // body พังหรือไม่ใช่ JSON → ปล่อยเป็น auto ไป
   }
 
-  await enqueue(hourIso);
+  // fire-and-forget
+  enqueue(hourIso);
 
   return NextResponse.json({
     ok: true,
