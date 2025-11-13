@@ -31,7 +31,8 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const upstreamUrl = `${API_BASE.replace(/\/$/, "")}/api/cron/rollup-hourly`;
+  const upstreamUrl = `${API_BASE.replace(/\/$/, "")}/cron/rollup-hourly`;
+
 
   try {
     // fire-and-forget queue ไปที่ API จริง
