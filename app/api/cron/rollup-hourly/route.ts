@@ -1,80 +1,58 @@
 import { NextRequest, NextResponse } from "next/server";
+import { enqueueHourlyRollup } from "@/scripts/rollup-hourly";
 
 export const runtime = "nodejs";
 
-const API_BASE =
-  process.env.API_URL ||
-  process.env.NEXT_PUBLIC_API_URL ||
-  "https://api-solink.network";
-
 export async function POST(req: NextRequest) {
   const headerKey = req.headers.get("x-cron-key");
-  const envKey = process.env.CRON_KEY;
   const vercelCron = req.headers.get("x-vercel-cron");
+  const envKey = process.env.CRON_KEY;
 
-  const isAuthorized =
-    (!!envKey && headerKey === envKey) ||
+  // อนุญาต 2 ทาง:
+  // 1) มี X-CRON-KEY ตรงกับ env
+  // 2) มาจาก Vercel Cron (มี header x-vercel-cron: "1")
+  const authorized =
+    (envKey && headerKey === envKey) ||
     vercelCron === "1";
 
-  // ป้องกันไม่ให้ใครก็ได้มาเรียก endpoint นี้
-  if (!isAuthorized) {
+  if (!authorized) {
     return NextResponse.json(
       { ok: false, error: "unauthorized" },
       { status: 401 },
     );
   }
 
-  if (!API_BASE) {
-    return NextResponse.json(
-      { ok: false, error: "API_BASE not configured" },
-      { status: 500 },
-    );
-  }
-
-  const upstreamUrl = `${API_BASE.replace(/\/$/, "")}/cron/rollup-hourly`;
-
   try {
-    // fire-and-forget queue ไปที่ API จริง
-    const res = await fetch(upstreamUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        ...(envKey ? { "x-cron-key": envKey } : {}),
+    const hourIso = "auto";
+
+    // 🔥 จุดสำคัญ: สั่งเข้า queue ให้ worker ทำงาน ไม่ทำงานหนักในฟังก์ชันนี้
+    await enqueueHourlyRollup(hourIso);
+
+    return NextResponse.json(
+      {
+        ok: true,
+        queued: true,
+        hourIso,
       },
-      body: JSON.stringify({ hourIso: "auto" }),
-      cache: "no-store",
-    });
-
-    const json = await res.json().catch(() => null);
-
-    if (!res.ok) {
-      return NextResponse.json(
-        {
-          ok: false,
-          error: "upstream_error",
-          status: res.status,
-          body: json ?? null,
-        },
-        { status: 500 },
-      );
-    }
-
-    // ฝั่ง API ปกติจะตอบประมาณนี้:
-    // { ok: true, queued: true, hourIso: "auto" }
-    return NextResponse.json(json ?? { ok: true, queued: true, hourIso: "auto" });
-  } catch (err) {
+      { status: 200 },
+    );
+  } catch (err: any) {
     console.error("[cron][rollup-hourly] error:", err);
     return NextResponse.json(
-      { ok: false, error: "fetch_failed" },
+      {
+        ok: false,
+        error: "rollup_failed",
+        message: err?.message ?? "unknown_error",
+      },
       { status: 500 },
     );
   }
 }
 
 export function GET() {
-  // กันคนมาลองเปิดด้วย browser เฉย ๆ
+  // กันคนเปิดเล่นด้วย browser เฉย ๆ
   return NextResponse.json({
     ok: true,
-    message: "Use POST (Vercel Cron or X-CRON-KEY)",
+    message: "Use POST (Vercel Cron or X-CRON-KEY) to enqueue hourly rollup",
   });
 }
