@@ -24,7 +24,12 @@ export async function enqueueHourlyRollup(hourIso?: string) {
     removeOnComplete: 200,
     removeOnFail: 100,
   };
-  await queue.add("rollup", { hourIso }, opts);
+
+  // ถ้า hourIso เป็น "auto" หรือ undefined → ไม่ต้องส่งเข้า job
+  const payload =
+    !hourIso || hourIso === "auto" ? {} : { hourIso };
+
+  await queue.add("rollup", payload, opts);
 }
 
 /**
@@ -35,10 +40,23 @@ export function startHourlyWorker() {
     queueName,
     async (job) => {
       // ---- คำนวณช่วงชั่วโมง (UTC) ----
-      const baseIso =
-        (job?.data?.hourIso as string | undefined) ??
-        new Date(Date.now() - (Date.now() % 3600000)).toISOString(); // floor → ต้นชั่วโมง
+      const rawHourIso = (job?.data?.hourIso as string | undefined) ?? undefined;
+
+      let baseIso: string;
+      if (!rawHourIso || rawHourIso === "auto") {
+        // ใช้เวลาปัจจุบัน ปัดลงเป็นต้นชั่วโมง
+        const now = Date.now();
+        const floored = now - (now % 3600000);
+        baseIso = new Date(floored).toISOString();
+      } else {
+        baseIso = rawHourIso;
+      }
+
       const hourStart = new Date(baseIso);
+      if (isNaN(hourStart.getTime())) {
+        throw new Error(`Invalid hourIso received: ${baseIso}`);
+      }
+
       hourStart.setUTCMinutes(0, 0, 0);
       const hourEnd = new Date(hourStart.getTime() + 3600_000);
 
@@ -53,7 +71,12 @@ export function startHourlyWorker() {
 
       // ---- แถวสรุปทั้งระบบ: ใช้ userId = GLOBAL_USER_ID (ไม่ใช้ null) ----
       await prisma.metricsHourly.upsert({
-        where: { hourUtc_userId_unique: { hourUtc: hourStart, userId: GLOBAL_USER_ID } },
+        where: {
+          hourUtc_userId_unique: {
+            hourUtc: hourStart,
+            userId: GLOBAL_USER_ID,
+          },
+        },
         create: {
           hourUtc: hourStart,
           userId: GLOBAL_USER_ID,
@@ -72,7 +95,12 @@ export function startHourlyWorker() {
         const points = g._sum.amount ?? 0;
 
         await prisma.metricsHourly.upsert({
-          where: { hourUtc_userId_unique: { hourUtc: hourStart, userId } },
+          where: {
+            hourUtc_userId_unique: {
+              hourUtc: hourStart,
+              userId,
+            },
+          },
           create: {
             hourUtc: hourStart,
             userId,
@@ -98,11 +126,19 @@ export function startHourlyWorker() {
 
       const sumDay = await prisma.metricsHourly.aggregate({
         _sum: { pointsEarned: true },
-        where: { hourUtc: { gte: dayStart, lt: dayEnd }, userId: GLOBAL_USER_ID },
+        where: {
+          hourUtc: { gte: dayStart, lt: dayEnd },
+          userId: GLOBAL_USER_ID,
+        },
       });
 
       await prisma.metricsDaily.upsert({
-        where: { dayUtc_userId_unique: { dayUtc: dayStart, userId: GLOBAL_USER_ID } },
+        where: {
+          dayUtc_userId_unique: {
+            dayUtc: dayStart,
+            userId: GLOBAL_USER_ID,
+          },
+        },
         create: {
           dayUtc: dayStart,
           userId: GLOBAL_USER_ID,
