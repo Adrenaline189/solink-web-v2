@@ -1,56 +1,41 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse, NextRequest } from "next/server";
 import { SignJWT } from "jose";
 
 const COOKIE_NAME = "solink_auth";
-const EXPIRES_SECONDS = 60 * 60 * 24 * 30; // 30 วัน
+const EXPIRES_SECONDS = 60 * 60 * 24 * 30;
 
 function getSecretKey() {
   const secret = process.env.JWT_SECRET;
-  if (!secret) {
-    console.error("JWT_SECRET is not set");
-    throw new Error("JWT_SECRET is not set");
-  }
+  if (!secret) throw new Error("JWT_SECRET is missing");
   return new TextEncoder().encode(secret);
 }
 
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json().catch(() => ({}));
-    const wallet = typeof body.wallet === "string" ? body.wallet.trim() : "";
-
+    const body = await req.json();
+    const wallet = (body.wallet || "").trim();
     if (!wallet) {
-      return NextResponse.json(
-        { ok: false, error: "wallet is required" },
-        { status: 400 }
-      );
+      return NextResponse.json({ ok: false, error: "wallet required" }, { status: 400 });
     }
 
-    const now = Math.floor(Date.now() / 1000);
-
     const token = await new SignJWT({ w: wallet })
-      .setProtectedHeader({ alg: "HS256", typ: "JWT" })
-      .setIssuedAt(now)
-      .setExpirationTime(now + EXPIRES_SECONDS)
+      .setProtectedHeader({ alg: "HS256" })
+      .setExpirationTime(EXPIRES_SECONDS)
       .sign(getSecretKey());
 
-    const res = NextResponse.json({ ok: true, wallet });
+    const res = NextResponse.json({ ok: true });
 
-    res.cookies.set({
-      name: COOKIE_NAME,
-      value: token,
+    res.cookies.set(COOKIE_NAME, token, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
+      secure: true,
       sameSite: "lax",
       path: "/",
       maxAge: EXPIRES_SECONDS,
     });
 
     return res;
-  } catch (e: any) {
-    console.error("auth/login error:", e);
-    return NextResponse.json(
-      { ok: false, error: e?.message ?? "internal error" },
-      { status: 500 }
-    );
+  } catch (err) {
+    console.error("login failed:", err);
+    return NextResponse.json({ ok: false }, { status: 500 });
   }
 }
