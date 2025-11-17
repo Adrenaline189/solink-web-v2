@@ -1,4 +1,3 @@
-// app/dashboard/page.tsx
 "use client";
 
 import type { DashboardRange } from "@/types/dashboard";
@@ -17,7 +16,7 @@ import { Button } from "../../components/ui/button";
 import { Link2, Gauge, Award, Activity, Cloud, TrendingUp, BarChart4 } from "lucide-react";
 
 import type { DashboardSummary, HourlyPoint, Tx } from "../../types/dashboard";
-import { fetchDashboardSummary, fetchHourly, fetchTransactions } from "../../lib/data/dashboard";
+import { fetchHourly, fetchTransactions } from "../../lib/data/dashboard";
 
 import HourlyPoints from "../../components/charts/HourlyPoints";
 import { useWallet } from "@solana/wallet-adapter-react";
@@ -43,8 +42,58 @@ type SystemMetricsResp = {
   hourly: SystemHourRow[];
 };
 
-/* ---------------------------------- page ----------------------------------- */
 const TX_PAGE_SIZE = 20;
+
+/* -------------------------------- helpers ----------------------------------- */
+
+/**
+ * ดึง summary จาก /api/dashboard/summary ตามช่วงเวลา (today / 7d / 30d)
+ * รองรับทั้ง response แบบใหม่ (ok + summary) และแบบแบน (field ตรง ๆ)
+ */
+async function fetchDashboardSummaryClient(
+  range: DashboardRange,
+  signal?: AbortSignal
+): Promise<DashboardSummary | null> {
+  try {
+    const res = await fetch(`/api/dashboard/summary?range=${range}`, {
+      method: "GET",
+      cache: "no-store",
+      signal,
+    });
+
+    if (!res.ok) {
+      console.error("Failed to fetch /api/dashboard/summary:", res.status);
+      return null;
+    }
+
+    const data = await res.json();
+
+    // แบบใหม่: { ok: true, summary: {...}, ...payload }
+    if (data.ok && data.summary) {
+      return data.summary as DashboardSummary;
+    }
+
+    // fallback: แบบเก่า (field แบน ๆ)
+    return {
+      pointsToday: data.pointsToday ?? 0,
+      totalPoints: data.totalPoints ?? 0,
+      slk: data.slk ?? 0,
+      uptimeHours: data.uptimeHours ?? 0,
+      goalHours: data.goalHours ?? 8,
+      avgBandwidthMbps: data.avgBandwidthMbps ?? 0,
+      qf: data.qf ?? 0,
+      trust: data.trust ?? 0,
+      region: data.region ?? null,
+      ip: data.ip ?? null,
+      version: data.version ?? null,
+    } as DashboardSummary;
+  } catch (e) {
+    console.error("summary client error:", e);
+    return null;
+  }
+}
+
+/* ---------------------------------- page ----------------------------------- */
 
 function DashboardInner() {
   // Summary + user hourly + tx
@@ -145,7 +194,7 @@ function DashboardInner() {
       try {
         setLoading(true);
         const [s, h, t] = await Promise.all([
-          fetchDashboardSummary(ac.signal),
+          fetchDashboardSummaryClient(range, ac.signal),
           fetchHourly(range, ac.signal),
           fetchTransactions(range, ac.signal),
         ]);
@@ -302,9 +351,17 @@ function DashboardInner() {
           <Card>
             <CardContent className="p-5">
               <h3 className="text-lg font-semibold mb-3">Quality Factor &amp; Trust Score</h3>
-              <Meter label="Quality Factor" value={summary?.qf ?? 0} color="from-cyan-400 to-indigo-500" />
+              <Meter
+                label="Quality Factor"
+                value={summary?.qf ?? 0}
+                color="from-cyan-400 to-indigo-500"
+              />
               <div className="h-3" />
-              <Meter label="Trust Score" value={summary?.trust ?? 0} color="from-emerald-400 to-cyan-400" />
+              <Meter
+                label="Trust Score"
+                value={summary?.trust ?? 0}
+                color="from-emerald-400 to-cyan-400"
+              />
               <div className="text-sm text-slate-400 mt-2">
                 Note: QF considers p50 latency, jitter, and session stability.
               </div>
@@ -327,7 +384,9 @@ function DashboardInner() {
 
               <div className="w-full h-72 rounded-2xl border border-slate-800 bg-slate-950/40 p-2">
                 {sysLoading ? (
-                  <div className="flex h-full items-center justify-center text-slate-500">Loading…</div>
+                  <div className="flex h-full items-center justify-center text-slate-500">
+                    Loading…
+                  </div>
                 ) : sysError ? (
                   <div className="text-rose-400">{sysError}</div>
                 ) : (
@@ -367,7 +426,9 @@ function DashboardInner() {
                   </ResponsiveContainer>
                 )}
               </div>
-              <div className="mt-2 text-xs text-slate-500">Peak hour: {sysPeak.toLocaleString()} pts</div>
+              <div className="mt-2 text-xs text-slate-500">
+                Peak hour: {sysPeak.toLocaleString()} pts
+              </div>
             </CardContent>
           </Card>
         </div>
@@ -433,7 +494,8 @@ function DashboardInner() {
               <h3 className="text-lg font-semibold">Recent Transactions</h3>
               {!loading && (
                 <span className="text-xs text-slate-500">
-                  Showing {txPage.length.toLocaleString()} of {txData.length.toLocaleString()} events
+                  Showing {txPage.length.toLocaleString()} of{" "}
+                  {txData.length.toLocaleString()} events
                 </span>
               )}
             </div>
@@ -541,7 +603,7 @@ function Meter({ label, value, color }: { label: string; value: number; color: s
   const v = Math.max(0, Math.min(100, value ?? 0));
   return (
     <div>
-      <div className="flex items-center justify-between text-sm mb-1">
+      <div className="flex items-center justify_between text-sm mb-1">
         <span className="text-slate-300">{label}</span>
         <span className="text-slate-400">{v}%</span>
       </div>

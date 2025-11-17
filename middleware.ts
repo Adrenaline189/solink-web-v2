@@ -28,6 +28,39 @@ function buildCsp() {
 }
 
 export function middleware(req: NextRequest) {
+  const { pathname } = req.nextUrl;
+
+  /* -----------------------------------------------------------------------
+   * 1) Auth protect สำหรับ /dashboard และ /api/dashboard/*
+   * --------------------------------------------------------------------- */
+  const isProtectedDashboard =
+    pathname === "/dashboard" || pathname.startsWith("/dashboard/");
+  const isProtectedApi = pathname.startsWith("/api/dashboard/");
+  const isProtected = isProtectedDashboard || isProtectedApi;
+
+  if (isProtected) {
+    const token = req.cookies.get("solink_auth")?.value;
+
+    // ถ้าไม่มี cookie เลย → block
+    if (!token) {
+      // ถ้าเป็น API → ตอบ JSON 401
+      if (isProtectedApi) {
+        return NextResponse.json(
+          { ok: false, error: "Unauthorized" },
+          { status: 401 }
+        );
+      }
+
+      // ถ้าเป็นหน้าเว็บ → redirect ออกไปหน้าแรก (หรือหน้า login ภายหลัง)
+      const redirectUrl = new URL("/", req.url);
+      redirectUrl.searchParams.set("redirect", pathname);
+      return NextResponse.redirect(redirectUrl);
+    }
+  }
+
+  /* -----------------------------------------------------------------------
+   * 2) Security headers เดิม (CSP / HSTS / ฯลฯ)
+   * --------------------------------------------------------------------- */
   const res = NextResponse.next();
 
   // --- Security Headers (คุมจาก middleware จุดเดียว) ---
@@ -43,12 +76,14 @@ export function middleware(req: NextRequest) {
 
   // เปิด HSTS เฉพาะ production (ช่วยบังคับ HTTPS ทั้งโดเมน + ซับโดเมน)
   if (isProd) {
-    res.headers.set("Strict-Transport-Security", "max-age=63072000; includeSubDomains; preload");
+    res.headers.set(
+      "Strict-Transport-Security",
+      "max-age=63072000; includeSubDomains; preload"
+    );
   }
 
   // (ทางเลือก) เสริม hardening เพิ่มอีกเล็กน้อยที่ไม่กระทบ third-party
   res.headers.set("Cross-Origin-Opener-Policy", "same-origin");
-  res.headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
 
   return res;
 }

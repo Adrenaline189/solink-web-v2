@@ -1,4 +1,3 @@
-// app/api/dashboard/summary/route.ts
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
@@ -156,19 +155,26 @@ export async function GET() {
       // ถ้า setting พัง ก็ปล่อยเป็น null
     }
 
+    const payload = {
+      pointsToday,
+      totalPoints,
+      slk,
+      uptimeHours,
+      goalHours,
+      avgBandwidthMbps,
+      qf,
+      trust,
+      region,
+      ip,
+      version,
+    };
+
     return NextResponse.json(
       {
-        pointsToday,
-        totalPoints,
-        slk,
-        uptimeHours,
-        goalHours,
-        avgBandwidthMbps,
-        qf,
-        trust,
-        region,
-        ip,
-        version,
+        ok: true,
+        summary: payload,
+        // เพื่อให้โค้ดเดิมที่ใช้ field แบน ๆ ยังใช้งานได้อยู่
+        ...payload,
       },
       {
         headers: {
