@@ -7,6 +7,13 @@ const COOKIE_NAME = "solink_auth";
 const EXPIRES_SECONDS = 60 * 60 * 24 * 30;
 
 /* --------------------------------------------------------------------------
+   Types
+-------------------------------------------------------------------------- */
+export type AuthContext = {
+  wallet: string;
+};
+
+/* --------------------------------------------------------------------------
    1) API Key Auth (ของเดิม — ใช้สำหรับ cron, admin)
 -------------------------------------------------------------------------- */
 export function requireApiKey(req: NextRequest) {
@@ -48,4 +55,20 @@ export async function getAuthFromRequest(
     // token ไม่ valid / หมดอายุ / verify ไม่ผ่าน → ถือว่า anonymous
     return { wallet: null };
   }
+}
+
+/* --------------------------------------------------------------------------
+   3) Wrapper: getAuthContext (ใช้ใน API route อื่น ๆ)
+-------------------------------------------------------------------------- */
+/**
+ * ใช้ใน API routes ทั่วไป
+ * - ถ้าไม่มี wallet → คืน null (ให้ route ไปตอบ 401 เอง)
+ * - ถ้ามี wallet → คืน AuthContext ที่มี wallet แน่นอน
+ */
+export async function getAuthContext(
+  req: NextRequest
+): Promise<AuthContext | null> {
+  const { wallet } = await getAuthFromRequest(req);
+  if (!wallet) return null;
+  return { wallet };
 }
