@@ -10,12 +10,20 @@ const nextConfig = {
   experimental: {
     // เปิดใช้ typedRoutes ตามเดิม
     typedRoutes: true,
+
+    // ❤️ สำคัญมาก: อนุญาต origin ที่จะใช้ server actions (และหลีกเลี่ยงปัญหา set-cookie ถูก block)
+    serverActions: {
+      allowedOrigins: ["https://www.solink.network"],
+    },
   },
 
-  // ส่งค่า timezone ไปฝั่ง client แบบปลอดภัย (อ่านได้จาก process.env.NEXT_PUBLIC_SOLINK_TIMEZONE)
+  // ส่งค่า timezone ไป client
   env: {
     NEXT_PUBLIC_SOLINK_TIMEZONE: TZ,
   },
+
+  // ถอด X-Powered-By เพื่อลด fingerprinting ของ server
+  poweredByHeader: false,
 };
 
 export default nextConfig;
