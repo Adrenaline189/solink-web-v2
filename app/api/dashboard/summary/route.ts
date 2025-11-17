@@ -10,11 +10,13 @@ function toNum(v: any): number {
   const n = Number(v ?? 0);
   return Number.isFinite(n) ? n : 0;
 }
+
 function startOfUTC(date = new Date()) {
   const d = new Date(date);
   d.setUTCHours(0, 0, 0, 0);
   return d;
 }
+
 function addDaysUTC(d: Date, n: number) {
   const x = new Date(d);
   x.setUTCDate(x.getUTCDate() + n);
@@ -28,7 +30,7 @@ export async function GET() {
     const start = startOfUTC();
     const end = addDaysUTC(start, 1);
 
-    // ค่า summary หลัก ๆ
+    // ค่า summary หลัก ๆ (ค่าเริ่มต้น)
     let pointsToday = 0;
     let uptimeHours = 0;
     const goalHours = 8;
@@ -39,7 +41,10 @@ export async function GET() {
     // ✅ พยายามอ่านจาก MetricsDaily (system) ก่อน
     try {
       const md = await prisma.metricsDaily.findFirst({
-        where: { dayUtc: start, userId: "system" },
+        where: {
+          dayUtc: start,
+          userId: "system", // แถวสรุประบบ (system row)
+        },
         select: {
           pointsEarned: true,
           uptimePct: true,
@@ -52,7 +57,7 @@ export async function GET() {
       if (md) {
         pointsToday = toNum(md.pointsEarned);
 
-        // uptimePct (0–100) → ชม. จาก 24 ชั่วโมง (ปัดทศนิยม 1 ตำแหน่ง)
+        // uptimePct (0–100) → ชั่วโมงจาก 24 ชม. (ปัดทศนิยม 1 ตำแหน่ง)
         if (md.uptimePct != null) {
           const pct = toNum(md.uptimePct);
           uptimeHours = Number(((pct / 100) * 24).toFixed(1));
@@ -63,7 +68,7 @@ export async function GET() {
           avgBandwidthMbps = toNum(md.avgBandwidth);
         }
 
-        // QF / Trust จาก MetricsDaily
+        // QF / Trust จาก MetricsDaily (0–100)
         if (md.qfScore != null) {
           qf = Math.max(0, Math.min(100, Math.round(toNum(md.qfScore))));
         }
@@ -84,7 +89,7 @@ export async function GET() {
         pointsToday = toNum(mh._sum.pointsEarned);
       }
     } catch {
-      // ถ้า schema ยังไม่พร้อม ก็ให้เป็น 0 ไป
+      // ถ้า schema / query พัง ให้กลับไปค่าเริ่มต้น 0
       pointsToday = 0;
       uptimeHours = 0;
       avgBandwidthMbps = 0;
@@ -96,10 +101,14 @@ export async function GET() {
     if (qf === 0 || trust === 0) {
       try {
         const lastSystemHour = await prisma.metricsHourly.findFirst({
-          where: { userId: "system", hourUtc: { gte: start, lt: end } },
+          where: {
+            userId: "system",
+            hourUtc: { gte: start, lt: end },
+          },
           orderBy: { hourUtc: "desc" },
           select: { qfScore: true },
         });
+
         qf = Math.max(
           0,
           Math.min(100, Math.round(lastSystemHour?.qfScore ?? 0))
@@ -112,7 +121,8 @@ export async function GET() {
             pointsEarned: { gt: 0 },
           },
         });
-        // 1 ชม. = 5 คะแนน trust (max 100)
+
+        // 1 ชม. ที่มี traffic = 5 คะแนน trust (max 100)
         trust = Math.max(0, Math.min(100, nonZeroHours * 5));
       } catch {
         // ถ้า query พัง ก็ปล่อยเป็น 0
@@ -128,10 +138,11 @@ export async function GET() {
     // แปลงเป็น SLK (ตอนนี้ใช้ totalPoints / 1000)
     const slk = Number((totalPoints / 1000).toFixed(2));
 
-    // optional: system meta
+    // optional: system meta (region/ip/version)
     let region: string | null = null;
     let ip: string | null = null;
     let version: string | null = null;
+
     try {
       const [r, i, v] = await Promise.all([
         prisma.setting.findFirst({ where: { key: "region" } }),
@@ -141,7 +152,9 @@ export async function GET() {
       region = r?.value ?? null;
       ip = i?.value ?? null;
       version = v?.value ?? null;
-    } catch {}
+    } catch {
+      // ถ้า setting พัง ก็ปล่อยเป็น null
+    }
 
     return NextResponse.json(
       {
@@ -157,9 +170,14 @@ export async function GET() {
         ip,
         version,
       },
-      { headers: { "Cache-Control": "no-store" } }
+      {
+        headers: {
+          "Cache-Control": "no-store",
+        },
+      }
     );
   } catch (e: any) {
+    console.error("dashboard/summary error:", e);
     return NextResponse.json(
       { ok: false, error: e?.message || "internal error" },
       { status: 500 }

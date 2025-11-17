@@ -1,39 +1,33 @@
-import { NextResponse } from "next/server";
-import { jwtVerify } from "jose";
+// app/api/auth/me/route.ts
+import { NextRequest, NextResponse } from "next/server";
+import { getAuthContext } from "@/lib/auth";
 
-const COOKIE_NAME = "solink_auth";
-
-function getSecretKey() {
-  const secret = process.env.JWT_SECRET;
-  if (!secret) throw new Error("JWT_SECRET missing");
-  return new TextEncoder().encode(secret);
-}
-
-export async function GET(req: Request) {
+/**
+ * คืนข้อมูล user ที่ล็อกอินจาก cookie `solink_auth`
+ * ถ้าไม่มี / token ไม่ถูกต้อง → { ok: false, user: null }
+ */
+export async function GET(req: NextRequest) {
   try {
-    const cookie = req.headers.get("cookie") || "";
-    const token = cookie
-      .split(";")
-      .map((c) => c.trim())
-      .find((c) => c.startsWith(`${COOKIE_NAME}=`))
-      ?.split("=")[1];
+    const ctx = await getAuthContext(req);
 
-    if (!token) {
-      return NextResponse.json({ ok: false, user: null });
-    }
-
-    const { payload } = await jwtVerify(token, getSecretKey());
-    const wallet = payload.w;
-
-    if (!wallet) {
-      return NextResponse.json({ ok: false, user: null });
+    if (!ctx) {
+      return NextResponse.json({
+        ok: false,
+        user: null,
+      });
     }
 
     return NextResponse.json({
       ok: true,
-      user: { wallet },
+      user: {
+        wallet: ctx.wallet,
+      },
     });
   } catch (err) {
-    return NextResponse.json({ ok: false, user: null });
+    console.error("auth/me error:", err);
+    return NextResponse.json(
+      { ok: false, user: null },
+      { status: 500 }
+    );
   }
 }
