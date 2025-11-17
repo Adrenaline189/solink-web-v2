@@ -58,7 +58,7 @@ function DashboardInner() {
   const { prefs } = usePrefs();
   const tz = "UTC"; // ใช้โซนเวลาสากลแบบคงที่
 
-  const { publicKey, connected } = useWallet();
+  const { publicKey, connected, signMessage } = useWallet();
   const address = publicKey?.toBase58();
   const [refLink, setRefLink] = useState("");
   const [copied, setCopied] = useState(false);
@@ -106,6 +106,36 @@ function DashboardInner() {
     }).catch(() => {});
   }, [address, connected]);
 
+  /* 👇 Login จริงด้วย signMessage → /api/auth/login */
+  const loginWithWallet = useCallback(async () => {
+    if (!connected || !publicKey || !signMessage) return;
+
+    try {
+      const wallet = publicKey.toBase58();
+      const ts = Date.now();
+      const message = `Solink Login :: wallet=${wallet} :: ts=${ts}`;
+      const encoded = new TextEncoder().encode(message);
+
+      const sig = await signMessage(encoded);
+      const signatureB64 = u8ToBase64(sig);
+
+      await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ wallet, ts, signature: signatureB64 }),
+      });
+      // ตอนนี้ cookie solink_auth จะถูกเซ็ตโดย /api/auth/login
+    } catch (e) {
+      console.error("loginWithWallet failed:", e);
+    }
+  }, [connected, publicKey, signMessage]);
+
+  useEffect(() => {
+    // ถ้าเชื่อมกระเป๋าแล้ว และมี signMessage → ลอง login
+    if (!connected || !publicKey || !signMessage) return;
+    loginWithWallet();
+  }, [connected, publicKey, signMessage, loginWithWallet]);
+
   /* load summary + user hourly + tx */
   const refresh = useCallback(() => {
     const ac = new AbortController();
@@ -135,7 +165,7 @@ function DashboardInner() {
     return cleanup;
   }, [refresh]);
 
-  /* reset tx visible whenชุด tx เปลี่ยน (เปลี่ยน range) */
+  /* reset tx visible เมื่อชุด tx เปลี่ยน (เปลี่ยน range) */
   useEffect(() => {
     setTxVisible(TX_PAGE_SIZE);
   }, [txData]);
@@ -449,7 +479,7 @@ function DashboardInner() {
                           </Button>
                           <span className="text-xs text-slate-500">
                             Loaded {txPage.length.toLocaleString()} of{" "}
-                            {txData.length.toLocaleString()} events
+                              {txData.length.toLocaleString()} events
                           </span>
                         </div>
                       </td>
@@ -580,6 +610,15 @@ function RangeRadios({
       </div>
     </fieldset>
   );
+}
+
+/* helper: แปลง Uint8Array -> base64 สำหรับ signature */
+function u8ToBase64(arr: Uint8Array): string {
+  let binary = "";
+  for (let i = 0; i < arr.length; i++) {
+    binary += String.fromCharCode(arr[i]);
+  }
+  return btoa(binary);
 }
 
 function DashboardGlobalStyles() {
