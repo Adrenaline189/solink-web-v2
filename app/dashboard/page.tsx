@@ -79,7 +79,7 @@ function DashboardInner() {
   useEffect(() => {
     const origin =
       typeof window !== "undefined" ? window.location.origin : "https://solink.network";
-    const code = address ? address.slice(0, 8) : (localStorage.getItem("solink_ref_code") || "");
+    const code = address ? address.slice(0, 8) : localStorage.getItem("solink_ref_code") || "";
     const finalCode =
       code ||
       (() => {
@@ -124,6 +124,19 @@ function DashboardInner() {
       }
     })();
   }, [address, connected]);
+
+  /* ตรวจสอบสถานะ login จาก /api/auth/me (debug / ใช้ต่อยอดได้) */
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch("/api/auth/me", { cache: "no-store" });
+        const json = await res.json();
+        console.log("auth status:", json);
+      } catch (e) {
+        console.error("auth/me failed:", e);
+      }
+    })();
+  }, []);
 
   /* load summary + user hourly + tx */
   const refresh = useCallback(() => {
