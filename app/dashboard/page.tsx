@@ -43,18 +43,8 @@ type SystemMetricsResp = {
   hourly: SystemHourRow[];
 };
 
-type AuthMeta = {
-  wallet: string;
-  ts: number;
-};
-
-/* ---------------------------------- const ----------------------------------- */
-const TX_PAGE_SIZE = 20;
-const AUTH_META_KEY = "solink_auth_meta";
-// เช่น ให้จำว่า login แล้วภายใน 24 ชม. ไม่ต้องขอ signMessage ใหม่
-const AUTH_META_TTL_MS = 24 * 60 * 60 * 1000;
-
 /* ---------------------------------- page ----------------------------------- */
+const TX_PAGE_SIZE = 20;
 
 function DashboardInner() {
   // Summary + user hourly + tx
@@ -68,7 +58,7 @@ function DashboardInner() {
   const { prefs } = usePrefs();
   const tz = "UTC"; // ใช้โซนเวลาสากลแบบคงที่
 
-  const { publicKey, connected, signMessage } = useWallet();
+  const { publicKey, connected } = useWallet();
   const address = publicKey?.toBase58();
   const [refLink, setRefLink] = useState("");
   const [copied, setCopied] = useState(false);
@@ -85,118 +75,55 @@ function DashboardInner() {
   // refetch interval (ms)
   const SYS_REFRESH_MS = 30_000;
 
-  /* Referral link (local only for ตอนนี้) */
+  /* Referral link (local only สำหรับตอนนี้) */
   useEffect(() => {
     const origin =
       typeof window !== "undefined" ? window.location.origin : "https://solink.network";
-    const code = address ? address.slice(0, 8) : (typeof window !== "undefined" ? (localStorage.getItem("solink_ref_code") || "") : "");
+    const code = address ? address.slice(0, 8) : (localStorage.getItem("solink_ref_code") || "");
     const finalCode =
       code ||
       (() => {
         const c = Math.random().toString(36).slice(2, 10);
         try {
-          if (typeof window !== "undefined") {
-            localStorage.setItem("solink_ref_code", c);
-          }
+          localStorage.setItem("solink_ref_code", c);
         } catch {}
         return c;
       })();
     setRefLink(`${origin.replace(/\/$/, "")}/r/${encodeURIComponent(finalCode)}`);
   }, [address]);
 
-  /* sync wallet -> prefs API */
+  /* sync wallet -> prefs API + login ด้วย wallet address เฉย ๆ */
   useEffect(() => {
     if (!address || !connected) return;
+
     try {
-      if (typeof window !== "undefined") {
-        localStorage.setItem("solink_wallet", address);
-      }
+      localStorage.setItem("solink_wallet", address);
       document.cookie = `solink_wallet=${address}; Path=/; SameSite=Lax; Max-Age=2592000`;
     } catch {}
+
+    // ยิง /api/prefs (ของเดิม)
     fetch("/api/prefs", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ wallet: address }),
     }).catch(() => {});
-  }, [address, connected]);
 
-  /* helper: อ่าน/เขียน auth meta ใน localStorage */
-  const getAuthMeta = useCallback((): AuthMeta | null => {
-    if (typeof window === "undefined") return null;
-    const raw = localStorage.getItem(AUTH_META_KEY);
-    if (!raw) return null;
-    try {
-      const parsed = JSON.parse(raw);
-      if (parsed && typeof parsed.wallet === "string" && typeof parsed.ts === "number") {
-        return parsed as AuthMeta;
+    // 🔐 ยิง /api/auth/login เพื่อให้ server เซ็ต cookie solink_auth
+    (async () => {
+      try {
+        const res = await fetch("/api/auth/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ wallet: address }),
+        });
+        if (!res.ok) {
+          console.error("auth/login failed:", await res.text());
+        }
+      } catch (e) {
+        console.error("auth/login error:", e);
       }
-    } catch {}
-    return null;
-  }, []);
-
-  const setAuthMeta = useCallback((meta: AuthMeta) => {
-    if (typeof window === "undefined") return;
-    try {
-      localStorage.setItem(AUTH_META_KEY, JSON.stringify(meta));
-    } catch {}
-  }, []);
-
-  const clearAuthMeta = useCallback(() => {
-    if (typeof window === "undefined") return;
-    try {
-      localStorage.removeItem(AUTH_META_KEY);
-    } catch {}
-  }, []);
-
-  /* 👇 Login จริงด้วย signMessage → /api/auth/login 
-     แต่จะเรียกเฉพาะตอน "ยังไม่เคยล็อกอิน หรือเกิน TTL" */
-  const loginWithWallet = useCallback(async () => {
-    if (!connected || !publicKey || !signMessage) return;
-
-    const wallet = publicKey.toBase58();
-    const now = Date.now();
-
-    // เช็กว่าเคย login แล้วในช่วง AUTH_META_TTL_MS มั้ย
-    const meta = getAuthMeta();
-    if (meta && meta.wallet === wallet && now - meta.ts < AUTH_META_TTL_MS) {
-      // ✅ เคย login ไม่เกิน 24 ชม. ข้ามการ signMessage
-      return;
-    }
-
-    try {
-      const ts = Date.now();
-      const message = `Solink Login :: wallet=${wallet} :: ts=${ts}`;
-      const encoded = new TextEncoder().encode(message);
-
-      const sig = await signMessage(encoded);
-      const signatureB64 = u8ToBase64(sig);
-
-      await fetch("/api/auth/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ wallet, ts, signature: signatureB64 }),
-      });
-
-      // จำไว้ว่า wallet นี้ login แล้วตอน ts นี้
-      setAuthMeta({ wallet, ts: Date.now() });
-      // cookie solink_auth จะถูกเซ็ตโดย /api/auth/login
-    } catch (e) {
-      console.error("loginWithWallet failed:", e);
-    }
-  }, [connected, publicKey, signMessage, getAuthMeta, setAuthMeta]);
-
-  /* เรียก loginWithWallet แค่ตอน connect + มี signMessage เท่านั้น */
-  useEffect(() => {
-    if (!connected || !publicKey || !signMessage) return;
-    loginWithWallet();
-  }, [connected, publicKey, signMessage, loginWithWallet]);
-
-  /* ถ้า disconnect → ล้าง meta ทิ้ง (ไว้เป็น behavior แบบ logout) */
-  useEffect(() => {
-    if (!connected) {
-      clearAuthMeta();
-    }
-  }, [connected, clearAuthMeta]);
+    })();
+  }, [address, connected]);
 
   /* load summary + user hourly + tx */
   const refresh = useCallback(() => {
@@ -227,7 +154,7 @@ function DashboardInner() {
     return cleanup;
   }, [refresh]);
 
-  /* reset tx visible เมื่อชุด tx เปลี่ยน (เปลี่ยน range หรือ fetch ใหม่) */
+  /* reset tx visible เมื่อชุด tx เปลี่ยน (เปลี่ยน range) */
   useEffect(() => {
     setTxVisible(TX_PAGE_SIZE);
   }, [txData]);
@@ -674,15 +601,6 @@ function RangeRadios({
   );
 }
 
-/* helper: แปลง Uint8Array -> base64 สำหรับ signature */
-function u8ToBase64(arr: Uint8Array): string {
-  let binary = "";
-  for (let i = 0; i < arr.length; i++) {
-    binary += String.fromCharCode(arr[i]);
-  }
-  return btoa(binary);
-}
-
 function DashboardGlobalStyles() {
   return (
     <style jsx global>{`
@@ -696,18 +614,19 @@ function DashboardGlobalStyles() {
 
       /* ทำให้ WalletMultiButton เท่าปุ่ม Start Sharing เมื่ออยู่ใน .wa-equal */
       .wa-equal .wallet-adapter-button {
-        height: 3rem;               /* h-12 */
-        padding: 0 1.25rem;         /* px-5 */
-        border-radius: 1rem;        /* rounded-2xl */
+        height: 3rem;
+        padding: 0 1.25rem;
+        border-radius: 1rem;
         display: inline-flex;
         align-items: center;
-        gap: 0.5rem;                /* icon spacing */
-        font-size: 0.875rem;        /* text-sm */
-        line-height: 1;             /* avoid vertical jitter */
+        gap: 0.5rem;
+        font-size: 0.875rem;
+        line-height: 1;
       }
       .wa-equal .wallet-adapter-button .wallet-adapter-button-start-icon,
       .wa-equal .wallet-adapter-button .wallet-adapter-button-end-icon {
-        width: 1rem; height: 1rem;  /* h-4 w-4 */
+        width: 1rem;
+        height: 1rem;
       }
     `}</style>
   );
