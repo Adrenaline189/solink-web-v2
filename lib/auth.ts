@@ -1,10 +1,14 @@
 // lib/auth.ts
-import { NextRequest, NextResponse } from "next/server";
-import { jwtVerify, JWTPayload } from "jose";
+import { NextRequest } from "next/server";
+import { jwtVerify } from "jose";
+import type { JWTPayload } from "jose";
+
+const COOKIE_NAME = "solink_auth";
+const EXPIRES_SECONDS = 60 * 60 * 24 * 30;
 
 /* --------------------------------------------------------------------------
    1) API Key Auth (ของเดิม — ใช้สำหรับ cron, admin)
-   -------------------------------------------------------------------------- */
+-------------------------------------------------------------------------- */
 export function requireApiKey(req: NextRequest) {
   const header = req.headers.get("x-api-key") || req.headers.get("authorization");
   const token = header?.startsWith("Bearer ") ? header.slice("Bearer ".length) : header;
@@ -12,70 +16,36 @@ export function requireApiKey(req: NextRequest) {
   if (!process.env.API_KEY) throw new Error("API_KEY is not configured");
 
   if (token !== process.env.API_KEY) {
-    const e = new Error("Unauthorized");
-    // @ts-ignore
+    const e: any = new Error("Unauthorized");
     e.status = 401;
     throw e;
   }
 }
 
 /* --------------------------------------------------------------------------
-   2) JWT Auth (User login) 
-   - ใช้ cookie: solink_auth 
-   -------------------------------------------------------------------------- */
-export const AUTH_COOKIE_NAME = "solink_auth";
-
+   2) JWT Helper สำหรับอ่าน wallet จาก cookie solink_auth
+-------------------------------------------------------------------------- */
 function getSecretKey() {
   const secret = process.env.JWT_SECRET;
-  if (!secret) {
-    throw new Error("JWT_SECRET is not set");
-  }
+  if (!secret) throw new Error("JWT_SECRET is missing");
   return new TextEncoder().encode(secret);
 }
 
-/* type ของ user ที่ login */
-export type AuthContext = {
-  wallet: string;
-};
-
-/* --------------------------------------------------------------------------
-   3) อ่าน JWT จาก cookie → คืน wallet ถ้าถูกต้อง
-   -------------------------------------------------------------------------- */
-export async function getAuthContext(
+export async function getAuthFromRequest(
   req: NextRequest
-): Promise<AuthContext | null> {
-  const cookie = req.cookies.get(AUTH_COOKIE_NAME);
-  if (!cookie?.value) return null;
-
+): Promise<{ wallet: string | null }> {
   try {
-    const { payload } = await jwtVerify(cookie.value, getSecretKey());
+    // อ่าน cookie ชื่อ solink_auth
+    const token = req.cookies.get(COOKIE_NAME)?.value;
+    if (!token) return { wallet: null };
 
-    const w =
-      (payload as JWTPayload & { w?: string; wallet?: string }).w ||
-      (payload as any).wallet;
+    const { payload } = await jwtVerify(token, getSecretKey());
+    const data = payload as JWTPayload & { w?: string };
 
-    if (!w || typeof w !== "string") return null;
-
-    return { wallet: w };
-  } catch (err) {
-    console.warn("getAuthContext: invalid token", err);
-    return null;
+    const wallet = typeof data.w === "string" ? data.w : null;
+    return { wallet: wallet || null };
+  } catch {
+    // token ไม่ valid / หมดอายุ / verify ไม่ผ่าน → ถือว่า anonymous
+    return { wallet: null };
   }
-}
-
-/* --------------------------------------------------------------------------
-   4) Require login ใน API (ต้องมี cookie เท่านั้นถึงจะผ่าน)
-   -------------------------------------------------------------------------- */
-export async function requireAuth(
-  req: NextRequest
-): Promise<{ ctx?: AuthContext; res?: NextResponse }> {
-  const ctx = await getAuthContext(req);
-  if (!ctx) {
-    const res = NextResponse.json(
-      { ok: false, error: "unauthorized" },
-      { status: 401 }
-    );
-    return { res };
-  }
-  return { ctx };
 }
