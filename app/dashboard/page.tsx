@@ -190,7 +190,7 @@ function DashboardInner() {
             {err && <p className="text-rose-400 text-sm mt-1">Error: {err}</p>}
           </div>
 
-        {/* ทำให้ WalletMultiButton สูงเท่าปุ่ม Start Sharing */}
+          {/* ทำให้ WalletMultiButton สูงเท่าปุ่ม Start Sharing */}
           <div className="wa-equal flex items-center gap-3">
             <WalletMultiButton />
             <Button variant="secondary" className="rounded-2xl px-5 h-12">
@@ -296,9 +296,18 @@ function DashboardInner() {
                       <CartesianGrid strokeDasharray="3 3" />
                       <XAxis dataKey="hour" />
                       <YAxis allowDecimals={false} />
+                      {/* 🔥 Tooltip แบบเดียวกับ Hourly Points (User) */}
                       <Tooltip
-                        formatter={(v: number) => [v.toLocaleString() + " pts", "Points"]}
-                        labelFormatter={(l) => `UTC ${l}`}
+                        contentStyle={{
+                          backgroundColor: "rgba(15,23,42,0.96)", // ดำเข้ม
+                          border: "1px solid rgba(148,163,184,0.5)",
+                          borderRadius: 12,
+                          padding: "8px 10px",
+                        }}
+                        labelStyle={{ color: "#e5e7eb", fontSize: 12 }} // UTC 12:00
+                        itemStyle={{ color: "#22d3ee", fontSize: 12 }}   // Points : xxx pts
+                        formatter={(v: number) => [`Points : ${v.toLocaleString()} pts`, ""]}
+                        labelFormatter={(l: any) => `UTC ${l}`}
                       />
                       <ReferenceLine y={0} />
                       <Area
