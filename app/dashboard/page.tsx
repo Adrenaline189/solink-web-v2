@@ -43,8 +43,18 @@ type SystemMetricsResp = {
   hourly: SystemHourRow[];
 };
 
-/* ---------------------------------- page ----------------------------------- */
+type AuthMeta = {
+  wallet: string;
+  ts: number;
+};
+
+/* ---------------------------------- const ----------------------------------- */
 const TX_PAGE_SIZE = 20;
+const AUTH_META_KEY = "solink_auth_meta";
+// เช่น ให้จำว่า login แล้วภายใน 24 ชม. ไม่ต้องขอ signMessage ใหม่
+const AUTH_META_TTL_MS = 24 * 60 * 60 * 1000;
+
+/* ---------------------------------- page ----------------------------------- */
 
 function DashboardInner() {
   // Summary + user hourly + tx
@@ -75,28 +85,32 @@ function DashboardInner() {
   // refetch interval (ms)
   const SYS_REFRESH_MS = 30_000;
 
-  /* Referral link (local only forตอนนี้) */
+  /* Referral link (local only for ตอนนี้) */
   useEffect(() => {
     const origin =
       typeof window !== "undefined" ? window.location.origin : "https://solink.network";
-    const code = address ? address.slice(0, 8) : localStorage.getItem("solink_ref_code") || "";
+    const code = address ? address.slice(0, 8) : (typeof window !== "undefined" ? (localStorage.getItem("solink_ref_code") || "") : "");
     const finalCode =
       code ||
       (() => {
         const c = Math.random().toString(36).slice(2, 10);
         try {
-          localStorage.setItem("solink_ref_code", c);
+          if (typeof window !== "undefined") {
+            localStorage.setItem("solink_ref_code", c);
+          }
         } catch {}
         return c;
       })();
     setRefLink(`${origin.replace(/\/$/, "")}/r/${encodeURIComponent(finalCode)}`);
   }, [address]);
 
-  /* sync wallet -> prefs API (เก็บ address ฝั่ง client + prefs) */
+  /* sync wallet -> prefs API */
   useEffect(() => {
     if (!address || !connected) return;
     try {
-      localStorage.setItem("solink_wallet", address);
+      if (typeof window !== "undefined") {
+        localStorage.setItem("solink_wallet", address);
+      }
       document.cookie = `solink_wallet=${address}; Path=/; SameSite=Lax; Max-Age=2592000`;
     } catch {}
     fetch("/api/prefs", {
@@ -106,12 +120,50 @@ function DashboardInner() {
     }).catch(() => {});
   }, [address, connected]);
 
-  /* Login จริงด้วย signMessage → /api/auth/login */
+  /* helper: อ่าน/เขียน auth meta ใน localStorage */
+  const getAuthMeta = useCallback((): AuthMeta | null => {
+    if (typeof window === "undefined") return null;
+    const raw = localStorage.getItem(AUTH_META_KEY);
+    if (!raw) return null;
+    try {
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed.wallet === "string" && typeof parsed.ts === "number") {
+        return parsed as AuthMeta;
+      }
+    } catch {}
+    return null;
+  }, []);
+
+  const setAuthMeta = useCallback((meta: AuthMeta) => {
+    if (typeof window === "undefined") return;
+    try {
+      localStorage.setItem(AUTH_META_KEY, JSON.stringify(meta));
+    } catch {}
+  }, []);
+
+  const clearAuthMeta = useCallback(() => {
+    if (typeof window === "undefined") return;
+    try {
+      localStorage.removeItem(AUTH_META_KEY);
+    } catch {}
+  }, []);
+
+  /* 👇 Login จริงด้วย signMessage → /api/auth/login 
+     แต่จะเรียกเฉพาะตอน "ยังไม่เคยล็อกอิน หรือเกิน TTL" */
   const loginWithWallet = useCallback(async () => {
     if (!connected || !publicKey || !signMessage) return;
 
+    const wallet = publicKey.toBase58();
+    const now = Date.now();
+
+    // เช็กว่าเคย login แล้วในช่วง AUTH_META_TTL_MS มั้ย
+    const meta = getAuthMeta();
+    if (meta && meta.wallet === wallet && now - meta.ts < AUTH_META_TTL_MS) {
+      // ✅ เคย login ไม่เกิน 24 ชม. ข้ามการ signMessage
+      return;
+    }
+
     try {
-      const wallet = publicKey.toBase58();
       const ts = Date.now();
       const message = `Solink Login :: wallet=${wallet} :: ts=${ts}`;
       const encoded = new TextEncoder().encode(message);
@@ -124,17 +176,27 @@ function DashboardInner() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ wallet, ts, signature: signatureB64 }),
       });
-      // ตอนนี้ cookie solink_auth จะถูกเซ็ตโดย /api/auth/login
+
+      // จำไว้ว่า wallet นี้ login แล้วตอน ts นี้
+      setAuthMeta({ wallet, ts: Date.now() });
+      // cookie solink_auth จะถูกเซ็ตโดย /api/auth/login
     } catch (e) {
       console.error("loginWithWallet failed:", e);
     }
-  }, [connected, publicKey, signMessage]);
+  }, [connected, publicKey, signMessage, getAuthMeta, setAuthMeta]);
 
+  /* เรียก loginWithWallet แค่ตอน connect + มี signMessage เท่านั้น */
   useEffect(() => {
-    // ถ้าเชื่อมกระเป๋าแล้ว และมี signMessage → ลอง login
     if (!connected || !publicKey || !signMessage) return;
     loginWithWallet();
   }, [connected, publicKey, signMessage, loginWithWallet]);
+
+  /* ถ้า disconnect → ล้าง meta ทิ้ง (ไว้เป็น behavior แบบ logout) */
+  useEffect(() => {
+    if (!connected) {
+      clearAuthMeta();
+    }
+  }, [connected, clearAuthMeta]);
 
   /* load summary + user hourly + tx */
   const refresh = useCallback(() => {
@@ -165,7 +227,7 @@ function DashboardInner() {
     return cleanup;
   }, [refresh]);
 
-  /* reset tx visible เมื่อชุด tx เปลี่ยน (เปลี่ยน range) */
+  /* reset tx visible เมื่อชุด tx เปลี่ยน (เปลี่ยน range หรือ fetch ใหม่) */
   useEffect(() => {
     setTxVisible(TX_PAGE_SIZE);
   }, [txData]);
@@ -431,8 +493,7 @@ function DashboardInner() {
               <h3 className="text-lg font-semibold">Recent Transactions</h3>
               {!loading && (
                 <span className="text-xs text-slate-500">
-                  Showing {txPage.length.toLocaleString()} of{" "}
-                  {txData.length.toLocaleString()} events
+                  Showing {txPage.length.toLocaleString()} of {txData.length.toLocaleString()} events
                 </span>
               )}
             </div>
