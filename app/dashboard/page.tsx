@@ -79,7 +79,7 @@ function DashboardInner() {
   useEffect(() => {
     const origin =
       typeof window !== "undefined" ? window.location.origin : "https://solink.network";
-    const code = address ? address.slice(0, 8) : (localStorage.getItem("solink_ref_code") || "");
+    const code = address ? address.slice(0, 8) : localStorage.getItem("solink_ref_code") || "";
     const finalCode =
       code ||
       (() => {
@@ -92,7 +92,7 @@ function DashboardInner() {
     setRefLink(`${origin.replace(/\/$/, "")}/r/${encodeURIComponent(finalCode)}`);
   }, [address]);
 
-  /* sync wallet -> prefs API */
+  /* sync wallet -> prefs API (เก็บ address ฝั่ง client + prefs) */
   useEffect(() => {
     if (!address || !connected) return;
     try {
@@ -106,7 +106,7 @@ function DashboardInner() {
     }).catch(() => {});
   }, [address, connected]);
 
-  /* 👇 Login จริงด้วย signMessage → /api/auth/login */
+  /* Login จริงด้วย signMessage → /api/auth/login */
   const loginWithWallet = useCallback(async () => {
     if (!connected || !publicKey || !signMessage) return;
 
@@ -431,7 +431,8 @@ function DashboardInner() {
               <h3 className="text-lg font-semibold">Recent Transactions</h3>
               {!loading && (
                 <span className="text-xs text-slate-500">
-                  Showing {txPage.length.toLocaleString()} of {txData.length.toLocaleString()} events
+                  Showing {txPage.length.toLocaleString()} of{" "}
+                  {txData.length.toLocaleString()} events
                 </span>
               )}
             </div>
@@ -479,7 +480,7 @@ function DashboardInner() {
                           </Button>
                           <span className="text-xs text-slate-500">
                             Loaded {txPage.length.toLocaleString()} of{" "}
-                              {txData.length.toLocaleString()} events
+                            {txData.length.toLocaleString()} events
                           </span>
                         </div>
                       </td>
