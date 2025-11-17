@@ -16,7 +16,12 @@ function getSecretKey() {
 export async function POST(req: Request) {
   try {
     const body = await req.json().catch(() => ({}));
-    const wallet = typeof body.wallet === "string" ? body.wallet.trim() : "";
+    const wallet =
+      typeof body.wallet === "string" ? body.wallet.trim() : "";
+    const ts =
+      typeof body.ts === "number" ? body.ts : Date.now();
+    const signature =
+      typeof body.signature === "string" ? body.signature : "";
 
     if (!wallet) {
       return NextResponse.json(
@@ -25,8 +30,13 @@ export async function POST(req: Request) {
       );
     }
 
+    // payload ที่เก็บใน JWT (เบา ๆ พอ)
     const now = Math.floor(Date.now() / 1000);
-    const payload = { w: wallet };
+    const payload = {
+      w: wallet,
+      ts,
+      sig: signature ? "1" : "0", // แค่ flag ว่ามี signature มาด้วย
+    };
 
     const token = await new SignJWT(payload)
       .setProtectedHeader({ alg: "HS256", typ: "JWT" })
@@ -36,13 +46,15 @@ export async function POST(req: Request) {
 
     const res = NextResponse.json({ ok: true });
 
-    // ตั้ง cookie HttpOnly
+    // ให้ secure เฉพาะ production (บน https://www.solink.network)
+    const isProd = process.env.NODE_ENV === "production";
+
     res.cookies.set({
       name: COOKIE_NAME,
       value: token,
       httpOnly: true,
-      secure: true,
-      sameSite: "lax",
+      secure: isProd,          // ✅ localhost จะไม่ติด secure → cookie โผล่
+      sameSite: "lax",         // พอสำหรับ same-domain dashboard + api
       path: "/",
       maxAge: EXPIRES_SECONDS,
     });
