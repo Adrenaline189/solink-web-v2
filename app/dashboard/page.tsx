@@ -1,6 +1,7 @@
 // app/dashboard/page.tsx
-import type { DashboardRange } from "@/types/dashboard";
 "use client";
+
+import type { DashboardRange } from "@/types/dashboard";
 
 import NextDynamic from "next/dynamic";
 const WalletMultiButton = NextDynamic(
@@ -16,11 +17,7 @@ import { Button } from "../../components/ui/button";
 import { Link2, Gauge, Award, Activity, Cloud, TrendingUp, BarChart4 } from "lucide-react";
 
 import type { DashboardSummary, HourlyPoint, Tx } from "../../types/dashboard";
-import {
-  fetchDashboardSummary,
-  fetchHourly,
-  fetchTransactions,
-} from "../../lib/data/dashboard";
+import { fetchDashboardSummary, fetchHourly, fetchTransactions } from "../../lib/data/dashboard";
 
 import HourlyPoints from "../../components/charts/HourlyPoints";
 import { useWallet } from "@solana/wallet-adapter-react";
@@ -38,7 +35,7 @@ import {
   ReferenceLine,
 } from "recharts";
 
-/* ---------------------------------- page ----------------------------------- */
+/* ---------------------------------- types ----------------------------------- */
 type SystemHourRow = { hourUtc: string; pointsEarned: number };
 type SystemMetricsResp = {
   ok: boolean;
@@ -46,8 +43,11 @@ type SystemMetricsResp = {
   hourly: SystemHourRow[];
 };
 
+/* ---------------------------------- page ----------------------------------- */
+const TX_PAGE_SIZE = 20;
+
 function DashboardInner() {
-  // สรุป & กราฟของผู้ใช้
+  // Summary + user hourly + tx
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
   const [hourly, setHourly] = useState<HourlyPoint[]>([]);
   const [txData, setTxData] = useState<Tx[]>([]);
@@ -56,29 +56,32 @@ function DashboardInner() {
 
   const [range, setRange] = useState<DashboardRange>("today");
   const { prefs } = usePrefs();
-  const tz = "UTC";
+  const tz = "UTC"; // ใช้โซนเวลาสากลแบบคงที่
 
   const { publicKey, connected } = useWallet();
   const address = publicKey?.toBase58();
   const [refLink, setRefLink] = useState("");
   const [copied, setCopied] = useState(false);
 
-  // System metrics (global)
+  // ---- System Metrics (GLOBAL) ----
   const [sysLoading, setSysLoading] = useState(true);
   const [sysError, setSysError] = useState<string | null>(null);
   const [sysDaily, setSysDaily] = useState<number>(0);
   const [sysHourly, setSysHourly] = useState<SystemHourRow[]>([]);
 
+  // Recent tx pagination
+  const [txVisible, setTxVisible] = useState<number>(TX_PAGE_SIZE);
+
+  // refetch interval (ms)
   const SYS_REFRESH_MS = 30_000;
 
-  // สร้าง referral link (เวอร์ชั่นเบสิค: address 8 ตัวแรก / random)
+  /* Referral link (local only forตอนนี้) */
   useEffect(() => {
     const origin =
       typeof window !== "undefined" ? window.location.origin : "https://solink.network";
-
-    const code =
-      address ??
-      localStorage.getItem("solink_ref_code") ??
+    const code = address ? address.slice(0, 8) : (localStorage.getItem("solink_ref_code") || "");
+    const finalCode =
+      code ||
       (() => {
         const c = Math.random().toString(36).slice(2, 10);
         try {
@@ -86,12 +89,10 @@ function DashboardInner() {
         } catch {}
         return c;
       })();
-
-    const shortCode = (code || "").slice(0, 8);
-    setRefLink(`${origin.replace(/\/$/, "")}/r/${encodeURIComponent(shortCode)}`);
+    setRefLink(`${origin.replace(/\/$/, "")}/r/${encodeURIComponent(finalCode)}`);
   }, [address]);
 
-  // เก็บ wallet ไว้ใน localStorage / cookie + prefs
+  /* sync wallet -> prefs API */
   useEffect(() => {
     if (!address || !connected) return;
     try {
@@ -105,7 +106,7 @@ function DashboardInner() {
     }).catch(() => {});
   }, [address, connected]);
 
-  // โหลด summary + user hourly + tx
+  /* load summary + user hourly + tx */
   const refresh = useCallback(() => {
     const ac = new AbortController();
     (async () => {
@@ -134,7 +135,12 @@ function DashboardInner() {
     return cleanup;
   }, [refresh]);
 
-  // โหลด System Metrics จาก /api/dashboard/metrics + auto refresh
+  /* reset tx visible whenชุด tx เปลี่ยน (เปลี่ยน range) */
+  useEffect(() => {
+    setTxVisible(TX_PAGE_SIZE);
+  }, [txData]);
+
+  /* load System Metrics จาก /api/dashboard/metrics + auto refresh */
   const loadSystemMetrics = useCallback(async (signal?: AbortSignal) => {
     try {
       setSysLoading(true);
@@ -185,6 +191,14 @@ function DashboardInner() {
     [sysRows]
   );
 
+  // Slice รายการ tx ตามจำนวนที่โชว์
+  const txPage = useMemo(() => txData.slice(0, txVisible), [txData, txVisible]);
+  const canLoadMore = txData.length > txVisible;
+
+  const handleLoadMoreTx = () => {
+    setTxVisible((prev) => Math.min(prev + TX_PAGE_SIZE, txData.length));
+  };
+
   return (
     <div className="min-h-screen text-slate-100 p-6">
       <div className="max-w-7xl mx-auto">
@@ -192,13 +206,11 @@ function DashboardInner() {
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6">
           <div>
             <h1 className="text-3xl font-bold tracking-tight">Solink Dashboard</h1>
-            <p className="text-slate-400">
-              {loading ? "Loading data…" : "Wired to API routes."}
-            </p>
+            <p className="text-slate-400">{loading ? "Loading data…" : "Wired to API routes."}</p>
             {err && <p className="text-rose-400 text-sm mt-1">Error: {err}</p>}
           </div>
 
-          {/* ทำให้ WalletMultiButton สูงเท่าปุ่ม Start Sharing */}
+          {/* Wallet + Start Sharing */}
           <div className="wa-equal flex items-center gap-3">
             <WalletMultiButton />
             <Button variant="secondary" className="rounded-2xl px-5 h-12">
@@ -254,22 +266,13 @@ function DashboardInner() {
             </CardContent>
           </Card>
 
+          {/* Quality Factor & Trust */}
           <Card>
             <CardContent className="p-5">
-              <h3 className="text-lg font-semibold mb-3">
-                Quality Factor &amp; Trust Score
-              </h3>
-              <Meter
-                label="Quality Factor"
-                value={summary?.qf ?? 0}
-                color="from-cyan-400 to-indigo-500"
-              />
+              <h3 className="text-lg font-semibold mb-3">Quality Factor &amp; Trust Score</h3>
+              <Meter label="Quality Factor" value={summary?.qf ?? 0} color="from-cyan-400 to-indigo-500" />
               <div className="h-3" />
-              <Meter
-                label="Trust Score"
-                value={summary?.trust ?? 0}
-                color="from-emerald-400 to-cyan-400"
-              />
+              <Meter label="Trust Score" value={summary?.trust ?? 0} color="from-emerald-400 to-cyan-400" />
               <div className="text-sm text-slate-400 mt-2">
                 Note: QF considers p50 latency, jitter, and session stability.
               </div>
@@ -277,7 +280,7 @@ function DashboardInner() {
           </Card>
         </div>
 
-        {/* System (GLOBAL) Hourly จาก /api/dashboard/metrics */}
+        {/* System (GLOBAL) Hourly */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
           <Card className="lg:col-span-3">
             <CardContent className="p-5">
@@ -292,17 +295,12 @@ function DashboardInner() {
 
               <div className="w-full h-72 rounded-2xl border border-slate-800 bg-slate-950/40 p-2">
                 {sysLoading ? (
-                  <div className="flex h-full items-center justify-center text-slate-500">
-                    Loading…
-                  </div>
+                  <div className="flex h-full items-center justify-center text-slate-500">Loading…</div>
                 ) : sysError ? (
                   <div className="text-rose-400">{sysError}</div>
                 ) : (
                   <ResponsiveContainer width="100%" height="100%">
-                    <AreaChart
-                      data={sysRows}
-                      margin={{ top: 8, right: 12, left: 0, bottom: 0 }}
-                    >
+                    <AreaChart data={sysRows} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
                       <defs>
                         <linearGradient id="sysG" x1="0" y1="0" x2="0" y2="1">
                           <stop offset="5%" stopOpacity={0.35} />
@@ -312,7 +310,6 @@ function DashboardInner() {
                       <CartesianGrid strokeDasharray="3 3" />
                       <XAxis dataKey="hour" />
                       <YAxis allowDecimals={false} />
-                      {/* Tooltip แบบเข้ม เหมือนกราฟ User */}
                       <Tooltip
                         contentStyle={{
                           backgroundColor: "rgba(15,23,42,0.96)",
@@ -322,10 +319,7 @@ function DashboardInner() {
                         }}
                         labelStyle={{ color: "#e5e7eb", fontSize: 12 }}
                         itemStyle={{ color: "#22d3ee", fontSize: 12 }}
-                        formatter={(v: number) => [
-                          `Points : ${v.toLocaleString()} pts`,
-                          "",
-                        ]}
+                        formatter={(v: number) => [`Points : ${v.toLocaleString()} pts`, ""]}
                         labelFormatter={(l: any) => `UTC ${l}`}
                       />
                       <ReferenceLine y={0} />
@@ -341,9 +335,7 @@ function DashboardInner() {
                   </ResponsiveContainer>
                 )}
               </div>
-              <div className="mt-2 text-xs text-slate-500">
-                Peak hour: {sysPeak.toLocaleString()} pts
-              </div>
+              <div className="mt-2 text-xs text-slate-500">Peak hour: {sysPeak.toLocaleString()} pts</div>
             </CardContent>
           </Card>
         </div>
@@ -380,18 +372,10 @@ function DashboardInner() {
                   className="w-full rounded-xl bg-slate-900/60 border border-slate-700 px-3 py-2 text-sm text-slate-200"
                 />
                 <div className="flex gap-2">
-                  <Button
-                    onClick={copy}
-                    className="rounded-xl px-4"
-                    title="Copy referral link"
-                  >
+                  <Button onClick={copy} className="rounded-xl px-4" title="Copy referral link">
                     {copied ? "Copied!" : "Copy"}
                   </Button>
-                  <Button
-                    variant="secondary"
-                    className="rounded-xl"
-                    title="Share referral link"
-                  >
+                  <Button variant="secondary" className="rounded-xl" title="Share referral link">
                     Share
                   </Button>
                 </div>
@@ -410,10 +394,18 @@ function DashboardInner() {
           </Card>
         </div>
 
-        {/* Recent Transactions */}
+        {/* Recent Transactions (with Load More) */}
         <Card>
           <CardContent className="p-5">
-            <h3 className="text-lg font-semibold mb-3">Recent Transactions</h3>
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-lg font-semibold">Recent Transactions</h3>
+              {!loading && (
+                <span className="text-xs text-slate-500">
+                  Showing {txPage.length.toLocaleString()} of {txData.length.toLocaleString()} events
+                </span>
+              )}
+            </div>
+
             <div className="overflow-x-auto">
               <table className="min-w-full text-sm">
                 <thead>
@@ -434,7 +426,7 @@ function DashboardInner() {
                           <td className="py-2 pr-4 text-slate-700">—</td>
                         </tr>
                       ))
-                    : txData.map((r, i) => (
+                    : txPage.map((r, i) => (
                         <tr key={i} className="border-t border-slate-800">
                           <td className="py-2 pr-4 whitespace-nowrap">{r.ts}</td>
                           <td className="py-2 pr-4">{r.type}</td>
@@ -443,6 +435,27 @@ function DashboardInner() {
                         </tr>
                       ))}
                 </tbody>
+                {!loading && canLoadMore && (
+                  <tfoot>
+                    <tr>
+                      <td colSpan={4} className="pt-3">
+                        <div className="flex items-center justify-between gap-3">
+                          <Button
+                            onClick={handleLoadMoreTx}
+                            className="rounded-xl px-4"
+                            variant="outline"
+                          >
+                            Load more
+                          </Button>
+                          <span className="text-xs text-slate-500">
+                            Loaded {txPage.length.toLocaleString()} of{" "}
+                            {txData.length.toLocaleString()} events
+                          </span>
+                        </div>
+                      </td>
+                    </tr>
+                  </tfoot>
+                )}
               </table>
             </div>
           </CardContent>
@@ -475,15 +488,9 @@ function KPI({
       <CardContent className="p-5">
         <div className="flex items-center justify-between">
           <div>
-            <div className="text-slate-400 text-xs uppercase tracking-wide">
-              {title}
-            </div>
+            <div className="text-slate-400 text-xs uppercase tracking-wide">{title}</div>
             <div className="text-2xl font-bold mt-1">{loading ? "—" : value}</div>
-            {sub && (
-              <div className="text-slate-400 text-xs mt-1">
-                {loading ? "—" : sub}
-              </div>
-            )}
+            {sub && <div className="text-slate-400 text-xs mt-1">{loading ? "—" : sub}</div>}
           </div>
           <div className="opacity-70">{icon}</div>
         </div>
@@ -513,25 +520,11 @@ function Meter({ label, value, color }: { label: string; value: number; color: s
   );
 }
 
-function StatusItem({
-  label,
-  value,
-  positive,
-}: {
-  label: string;
-  value: string;
-  positive?: boolean;
-}) {
+function StatusItem({ label, value, positive }: { label: string; value: string; positive?: boolean }) {
   return (
     <div className="flex items-center justify-between py-1.5 border-b border-slate-800 last:border-none">
       <span className="text-slate-400 text-sm">{label}</span>
-      <span
-        className={`text-sm ${
-          positive ? "text-emerald-400" : "text-slate-300"
-        }`}
-      >
-        {value}
-      </span>
+      <span className={`text-sm ${positive ? "text-emerald-400" : "text-slate-300"}`}>{value}</span>
     </div>
   );
 }
@@ -593,85 +586,27 @@ function DashboardGlobalStyles() {
   return (
     <style jsx global>{`
       /* Progress meter width steps */
-      .mw-0 {
-        width: 0%;
-      }
-      .mw-5 {
-        width: 5%;
-      }
-      .mw-10 {
-        width: 10%;
-      }
-      .mw-15 {
-        width: 15%;
-      }
-      .mw-20 {
-        width: 20%;
-      }
-      .mw-25 {
-        width: 25%;
-      }
-      .mw-30 {
-        width: 30%;
-      }
-      .mw-35 {
-        width: 35%;
-      }
-      .mw-40 {
-        width: 40%;
-      }
-      .mw-45 {
-        width: 45%;
-      }
-      .mw-50 {
-        width: 50%;
-      }
-      .mw-55 {
-        width: 55%;
-      }
-      .mw-60 {
-        width: 60%;
-      }
-      .mw-65 {
-        width: 65%;
-      }
-      .mw-70 {
-        width: 70%;
-      }
-      .mw-75 {
-        width: 75%;
-      }
-      .mw-80 {
-        width: 80%;
-      }
-      .mw-85 {
-        width: 85%;
-      }
-      .mw-90 {
-        width: 90%;
-      }
-      .mw-95 {
-        width: 95%;
-      }
-      .mw-100 {
-        width: 100%;
-      }
+      .mw-0 { width: 0% } .mw-5 { width: 5% } .mw-10 { width: 10% } .mw-15 { width: 15% }
+      .mw-20 { width: 20% } .mw-25 { width: 25% } .mw-30 { width: 30% } .mw-35 { width: 35% }
+      .mw-40 { width: 40% } .mw-45 { width: 45% } .mw-50 { width: 50% } .mw-55 { width: 55% }
+      .mw-60 { width: 60% } .mw-65 { width: 65% } .mw-70 { width: 70% } .mw-75 { width: 75% }
+      .mw-80 { width: 80% } .mw-85 { width: 85% } .mw-90 { width: 90% } .mw-95 { width: 95% }
+      .mw-100 { width: 100% }
 
       /* ทำให้ WalletMultiButton เท่าปุ่ม Start Sharing เมื่ออยู่ใน .wa-equal */
       .wa-equal .wallet-adapter-button {
-        height: 3rem; /* h-12 */
-        padding: 0 1.25rem; /* px-5 */
-        border-radius: 1rem; /* rounded-2xl */
+        height: 3rem;               /* h-12 */
+        padding: 0 1.25rem;         /* px-5 */
+        border-radius: 1rem;        /* rounded-2xl */
         display: inline-flex;
         align-items: center;
-        gap: 0.5rem; /* icon spacing */
-        font-size: 0.875rem; /* text-sm */
-        line-height: 1; /* avoid vertical jitter */
+        gap: 0.5rem;                /* icon spacing */
+        font-size: 0.875rem;        /* text-sm */
+        line-height: 1;             /* avoid vertical jitter */
       }
       .wa-equal .wallet-adapter-button .wallet-adapter-button-start-icon,
       .wa-equal .wallet-adapter-button .wallet-adapter-button-end-icon {
-        width: 1rem;
-        height: 1rem; /* h-4 w-4 */
+        width: 1rem; height: 1rem;  /* h-4 w-4 */
       }
     `}</style>
   );
