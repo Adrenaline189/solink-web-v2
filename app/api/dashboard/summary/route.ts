@@ -28,16 +28,51 @@ export async function GET() {
     const start = startOfUTC();
     const end = addDaysUTC(start, 1);
 
-    // ✅ pointsToday: พยายามอ่านจาก MetricsDaily (system) ก่อน
+    // ค่า summary หลัก ๆ
     let pointsToday = 0;
+    let uptimeHours = 0;
+    const goalHours = 8;
+    let avgBandwidthMbps = 0;
+    let qf = 0;
+    let trust = 0;
+
+    // ✅ พยายามอ่านจาก MetricsDaily (system) ก่อน
     try {
       const md = await prisma.metricsDaily.findFirst({
         where: { dayUtc: start, userId: "system" },
-        select: { pointsEarned: true },
+        select: {
+          pointsEarned: true,
+          uptimePct: true,
+          avgBandwidth: true,
+          qfScore: true,
+          trustScore: true,
+        },
       });
-      pointsToday = toNum(md?.pointsEarned ?? 0);
 
-      // สำรอง: ถ้ายังไม่มีแถวใน MetricsDaily ให้ sum จาก MetricsHourly ของวันนั้น
+      if (md) {
+        pointsToday = toNum(md.pointsEarned);
+
+        // uptimePct (0–100) → ชม. จาก 24 ชั่วโมง (ปัดทศนิยม 1 ตำแหน่ง)
+        if (md.uptimePct != null) {
+          const pct = toNum(md.uptimePct);
+          uptimeHours = Number(((pct / 100) * 24).toFixed(1));
+        }
+
+        // Mbps เฉลี่ย
+        if (md.avgBandwidth != null) {
+          avgBandwidthMbps = toNum(md.avgBandwidth);
+        }
+
+        // QF / Trust จาก MetricsDaily
+        if (md.qfScore != null) {
+          qf = Math.max(0, Math.min(100, Math.round(toNum(md.qfScore))));
+        }
+        if (md.trustScore != null) {
+          trust = Math.max(0, Math.min(100, Math.round(toNum(md.trustScore))));
+        }
+      }
+
+      // สำรอง: ถ้ายังไม่มี pointsToday ใน MetricsDaily ให้ sum จาก MetricsHourly
       if (pointsToday === 0) {
         const mh = await prisma.metricsHourly.aggregate({
           _sum: { pointsEarned: true },
@@ -51,6 +86,37 @@ export async function GET() {
     } catch {
       // ถ้า schema ยังไม่พร้อม ก็ให้เป็น 0 ไป
       pointsToday = 0;
+      uptimeHours = 0;
+      avgBandwidthMbps = 0;
+      qf = 0;
+      trust = 0;
+    }
+
+    // 🧩 Fallback เดิม: ถ้า QF/Trust ยังเป็น 0 ให้เดาจาก MetricsHourly ของวันนี้
+    if (qf === 0 || trust === 0) {
+      try {
+        const lastSystemHour = await prisma.metricsHourly.findFirst({
+          where: { userId: "system", hourUtc: { gte: start, lt: end } },
+          orderBy: { hourUtc: "desc" },
+          select: { qfScore: true },
+        });
+        qf = Math.max(
+          0,
+          Math.min(100, Math.round(lastSystemHour?.qfScore ?? 0))
+        );
+
+        const nonZeroHours = await prisma.metricsHourly.count({
+          where: {
+            userId: "system",
+            hourUtc: { gte: start, lt: end },
+            pointsEarned: { gt: 0 },
+          },
+        });
+        // 1 ชม. = 5 คะแนน trust (max 100)
+        trust = Math.max(0, Math.min(100, nonZeroHours * 5));
+      } catch {
+        // ถ้า query พัง ก็ปล่อยเป็น 0
+      }
     }
 
     // รวมยอด balance ทั้งระบบ
@@ -59,35 +125,8 @@ export async function GET() {
     });
     const totalPoints = toNum(totalAgg._sum.balance);
 
-    // --- QF / Trust (เดโมจากชั่วโมงล่าสุดของ system) ---
-    let qf = 0;
-    let trust = 0;
-    try {
-      const lastSystemHour = await prisma.metricsHourly.findFirst({
-        where: { userId: "system", hourUtc: { gte: start, lt: end } },
-        orderBy: { hourUtc: "desc" },
-        select: { qfScore: true },
-      });
-      qf = Math.max(0, Math.min(100, Math.round(lastSystemHour?.qfScore ?? 0)));
-
-      const nonZeroHours = await prisma.metricsHourly.count({
-        where: {
-          userId: "system",
-          hourUtc: { gte: start, lt: end },
-          pointsEarned: { gt: 0 },
-        },
-      });
-      trust = Math.max(0, Math.min(100, nonZeroHours * 5));
-    } catch {
-      qf = 0;
-      trust = 0;
-    }
-
-    // ค่าอื่น (placeholder)
+    // แปลงเป็น SLK (ตอนนี้ใช้ totalPoints / 1000)
     const slk = Number((totalPoints / 1000).toFixed(2));
-    const uptimeHours = 0;
-    const goalHours = 8;
-    const avgBandwidthMbps = 0;
 
     // optional: system meta
     let region: string | null = null;
