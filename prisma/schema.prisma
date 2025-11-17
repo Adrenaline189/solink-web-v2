@@ -110,3 +110,19 @@ model MetricsDaily {
   @@index([dayUtc])
   @@index([userId])
 }
+
+// =========================
+/*      REFERRAL CODE      */
+// =========================
+
+model ReferralCode {
+  /// โค้ดที่ใช้ใน URL เช่น /r/abcd1234
+  code      String   @id
+
+  /// อ้างอิงถึง userId / wallet เจ้าของโค้ด (ใช้เป็น String ตรง ๆ)
+  userId    String
+
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
