@@ -1,38 +1,34 @@
-// lib/data/dashboard.ts
-import type { DashboardSummary, HourlyPoint, Tx, DashboardRange } from "@/types/dashboard";
+// lib/data/dashboard.ts (ตัวอย่างฟังก์ชันให้ดูโครง)
+import type { DashboardRange, HourlyPoint, Tx } from "@/types/dashboard";
 
-export type { DashboardRange };
+export async function fetchHourly(
+  range: DashboardRange,
+  signal?: AbortSignal
+): Promise<HourlyPoint[]> {
+  const res = await fetch(`/api/dashboard/hourly?range=${range}`, {
+    method: "GET",
+    cache: "no-store",
+    signal,
+  });
 
-/** Safe JSON fetcher that guards empty body and non-OK responses. */
-async function fetchJSON<T>(url: string, signal?: AbortSignal): Promise<T> {
-  const res = await fetch(url, { signal, cache: "no-store" });
-  if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    throw new Error(`HTTP ${res.status} from ${url}: ${text.slice(0, 140)}`);
-  }
+  if (!res.ok) return [];
 
-  const text = await res.text();
-  if (!text) {
-    throw new Error(`Empty JSON body from ${url}`);
-  }
-
-  try {
-    return JSON.parse(text) as T;
-  } catch (e) {
-    throw new Error(`Invalid JSON from ${url}: ${text.slice(0, 140)}`);
-  }
+  const json = await res.json();
+  return Array.isArray(json.items) ? (json.items as HourlyPoint[]) : [];
 }
 
-export function fetchDashboardSummary(signal?: AbortSignal) {
-  return fetchJSON<DashboardSummary>("/api/dashboard/summary", signal);
-}
+export async function fetchTransactions(
+  range: DashboardRange,
+  signal?: AbortSignal
+): Promise<Tx[]> {
+  const res = await fetch(`/api/dashboard/transactions?range=${range}`, {
+    method: "GET",
+    cache: "no-store",
+    signal,
+  });
 
-export function fetchHourly(range: DashboardRange, signal?: AbortSignal) {
-  const q = new URLSearchParams({ range }).toString();
-  return fetchJSON<HourlyPoint[]>(`/api/dashboard/hourly?${q}`, signal);
-}
+  if (!res.ok) return [];
 
-export function fetchTransactions(range: DashboardRange, signal?: AbortSignal) {
-  const q = new URLSearchParams({ range }).toString();
-  return fetchJSON<Tx[]>(`/api/dashboard/transactions?${q}`, signal);
+  const json = await res.json();
+  return Array.isArray(json.items) ? (json.items as Tx[]) : [];
 }

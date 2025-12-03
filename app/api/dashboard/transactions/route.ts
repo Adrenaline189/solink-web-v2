@@ -1,67 +1,142 @@
+// app/api/dashboard/transactions/route.ts
 import { NextResponse } from "next/server";
+import { cookies } from "next/headers";
 import { prisma } from "@/lib/prisma";
 import type { DashboardRange } from "@/types/dashboard";
 
-export const dynamic = "force-dynamic";
+/**
+ * GET /api/dashboard/transactions?range=today|7d|30d
+ *
+ * คืนรายการ Recent Transactions บน Dashboard
+ * - ใช้ข้อมูลจาก PointEvent ของ user ปัจจุบัน
+ */
 
-/* --------------------------- helpers --------------------------- */
-function pad(n: number) { return n < 10 ? `0${n}` : `${n}`; }
-
-/** แปลง Date → "YYYY-MM-DD HH:mm UTC" */
-function fmtUTC(d: Date) {
-  return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())} ${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())} UTC`;
+function truncateToDayUtc(d: Date): Date {
+  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 0, 0, 0, 0));
 }
 
-/** แปลงค่าที่อาจเป็น BigInt/null → number ปลอดภัย */
-function toNum(v: any): number {
-  if (typeof v === "bigint") return Number(v);
-  const n = Number(v ?? 0);
-  return Number.isFinite(n) ? n : 0;
+function getRangeBounds(range: DashboardRange): { startUtc: Date; endUtc: Date } {
+  const now = new Date();
+  const endDay = truncateToDayUtc(now);
+  let startDay = new Date(endDay);
+
+  switch (range) {
+    case "7d": {
+      startDay = new Date(endDay);
+      startDay.setUTCDate(startDay.getUTCDate() - 6);
+      break;
+    }
+    case "30d": {
+      startDay = new Date(endDay);
+      startDay.setUTCDate(startDay.getUTCDate() - 29);
+      break;
+    }
+    case "today":
+    default: {
+      startDay = new Date(endDay);
+      break;
+    }
+  }
+
+  const startUtc = startDay;
+  const endUtc = new Date(endDay);
+  endUtc.setUTCDate(endUtc.getUTCDate() + 1);
+
+  return { startUtc, endUtc };
 }
 
-/** จำกัดค่า range ให้อยู่ในชุดที่อนุญาต */
-function normalizeRange(raw: string | null): DashboardRange {
-  const v = (raw ?? "today").toLowerCase();
-  return v === "7d" || v === "30d" || v === "today" ? v : "today";
+function formatUtcLabel(d: Date): string {
+  const iso = d.toISOString(); // 2025-12-02T14:35:10.123Z
+  const base = iso.replace("T", " ").replace("Z", "");
+  return `${base.slice(0, 19)} UTC`;
 }
 
-/* ----------------------------- GET ----------------------------- */
 export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
-    const _range = normalizeRange(searchParams.get("range")); // เผื่ออนาคต
-    const limitRaw = searchParams.get("limit");
-    const limit = Math.min(Number(limitRaw) || 50, 200); // default 50, max 200
+    const rangeParam = searchParams.get("range") as DashboardRange | null;
+    const range: DashboardRange = rangeParam === "7d" || rangeParam === "30d" ? rangeParam : "today";
 
-    const rows = await prisma.pointEvent.findMany({
-      orderBy: { createdAt: "desc" },
-      take: limit,
-      select: { createdAt: true, type: true, amount: true, meta: true },
+    const cookieStore = cookies();
+    const wallet = cookieStore.get("solink_wallet")?.value ?? null;
+
+    if (!wallet) {
+      return NextResponse.json(
+        {
+          ok: true,
+          range,
+          items: [] as Array<{ ts: string; type: string; amount: number; note?: string | null }>,
+        },
+        { status: 200 }
+      );
+    }
+
+    const user = await prisma.user.findFirst({
+      where: { wallet },
     });
 
-    const tx = rows.map((r) => {
-      const note =
-        typeof r.meta === "object" && r.meta && "note" in (r.meta as any)
-          ? String((r.meta as any).note)
-          : "";
+    if (!user) {
+      return NextResponse.json(
+        {
+          ok: true,
+          range,
+          items: [] as Array<{ ts: string; type: string; amount: number; note?: string | null }>,
+        },
+        { status: 200 }
+      );
+    }
+
+    const { startUtc, endUtc } = getRangeBounds(range);
+
+    const events = await prisma.pointEvent.findMany({
+      where: {
+        userId: user.id,
+        createdAt: {
+          gte: startUtc,
+          lt: endUtc,
+        },
+      },
+      orderBy: { createdAt: "desc" },
+      take: 200,
+    });
+
+    // ใส่ type ev เป็น any แบบ explicit
+    const items = events.map((ev: any) => {
+      let note: string | null = null;
+
+      if (ev.meta && typeof ev.meta === "object") {
+        const anyMeta = ev.meta as any;
+        if (typeof anyMeta.note === "string") {
+          note = anyMeta.note;
+        } else if (typeof anyMeta.source === "string") {
+          note = anyMeta.source;
+        }
+      }
+
       return {
-        ts: fmtUTC(new Date(r.createdAt)),
-        type: String(r.type),
-        amount: toNum(r.amount),
+        ts: formatUtcLabel(ev.createdAt),
+        type: ev.type,
+        amount: ev.amount,
         note,
       };
     });
 
-    return NextResponse.json(tx, {
-      headers: {
-        "Cache-Control": "no-store",
-        "X-Content-Type-Options": "nosniff",
-      },
-    });
-  } catch (e: any) {
     return NextResponse.json(
-      { ok: false, error: e?.message || "internal error" },
-      { status: 500 },
+      {
+        ok: true,
+        range,
+        items,
+      },
+      { status: 200 }
+    );
+  } catch (e: any) {
+    console.error("/api/dashboard/transactions error:", e);
+    return NextResponse.json(
+      {
+        ok: false,
+        error: e?.message || "Internal server error",
+      },
+      { status: 500 }
     );
   }
 }

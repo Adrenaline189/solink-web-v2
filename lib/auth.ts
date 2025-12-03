@@ -14,7 +14,7 @@ export type AuthContext = {
 };
 
 /* --------------------------------------------------------------------------
-   1) API Key Auth (ของเดิม — ใช้สำหรับ cron, admin)
+   1) API Key Auth (เดิม — ใช้สำหรับ cron, admin script ฝั่ง server)
 -------------------------------------------------------------------------- */
 export function requireApiKey(req: NextRequest) {
   const header = req.headers.get("x-api-key") || req.headers.get("authorization");
@@ -71,4 +71,33 @@ export async function getAuthContext(
   const { wallet } = await getAuthFromRequest(req);
   if (!wallet) return null;
   return { wallet };
+}
+
+/* --------------------------------------------------------------------------
+   4) Admin helper: requireAdmin
+      - อ่าน wallet จาก cookie
+      - เทียบกับ ADMIN_WALLET ใน env
+-------------------------------------------------------------------------- */
+export async function requireAdmin(req: NextRequest): Promise<AuthContext> {
+  const ctx = await getAuthContext(req);
+  if (!ctx?.wallet) {
+    const e: any = new Error("Unauthorized");
+    e.status = 401;
+    throw e;
+  }
+
+  const adminWallet = (process.env.ADMIN_WALLET || "").trim();
+  if (!adminWallet) {
+    const e: any = new Error("ADMIN_WALLET not configured");
+    e.status = 500;
+    throw e;
+  }
+
+  if (ctx.wallet !== adminWallet) {
+    const e: any = new Error("Forbidden");
+    e.status = 403;
+    throw e;
+  }
+
+  return ctx;
 }

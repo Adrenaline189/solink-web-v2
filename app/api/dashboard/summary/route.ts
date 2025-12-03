@@ -1,166 +1,146 @@
+// app/api/dashboard/summary/route.ts
 import { NextResponse } from "next/server";
+import { cookies } from "next/headers";
 import { prisma } from "@/lib/prisma";
+import type { DashboardRange } from "@/types/dashboard";
 
-export const dynamic = "force-dynamic";
+/**
+ * GET /api/dashboard/summary?range=today|7d|30d
+ *
+ * ใช้เป็น source หลักของ KPI บน Dashboard:
+ *  - Points Today
+ *  - Total Points
+ *  - SLK (off-chain)
+ *  - Uptime Today (ชั่วโมง)
+ *  - Goal Hours (ตั้งค่าตายตัว 8 ชม. ตอนนี้)
+ *  - Avg Bandwidth (Mbps)
+ *  - QF Score / Trust Score
+ *  - Region / IP / Version ล่าสุดของ node
+ *
+ * ฝั่ง client ใช้ helper fetchDashboardSummaryClient() ซึ่งรองรับทั้ง:
+ *  - { ok: true, summary: {...} }
+ *  - หรือ { pointsToday, totalPoints, ... } ตรง ๆ
+ */
 
-/* --------------------------- helpers --------------------------- */
-function toNum(v: any): number {
-  if (typeof v === "bigint") return Number(v);
-  const n = Number(v ?? 0);
-  return Number.isFinite(n) ? n : 0;
+const DEFAULT_GOAL_HOURS = 8;
+
+function truncateToDayUtc(d: Date): Date {
+  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 0, 0, 0, 0));
 }
 
-function startOfUTC(date = new Date()) {
-  const d = new Date(date);
-  d.setUTCHours(0, 0, 0, 0);
-  return d;
-}
-
-function addDaysUTC(d: Date, n: number) {
-  const x = new Date(d);
-  x.setUTCDate(x.getUTCDate() + n);
-  return x;
-}
-
-/* ----------------------------- GET ----------------------------- */
-export async function GET() {
+export async function GET(req: Request) {
   try {
-    // วันนี้แบบ UTC
-    const start = startOfUTC();
-    const end = addDaysUTC(start, 1);
+    const { searchParams } = new URL(req.url);
+    const rangeParam = searchParams.get("range") as DashboardRange | null;
+    const range: DashboardRange = rangeParam === "7d" || rangeParam === "30d" ? rangeParam : "today";
 
-    // ค่า summary หลัก ๆ (ค่าเริ่มต้น)
-    let pointsToday = 0;
-    let uptimeHours = 0;
-    const goalHours = 8;
-    let avgBandwidthMbps = 0;
-    let qf = 0;
-    let trust = 0;
+    const cookieStore = cookies();
+    const wallet = cookieStore.get("solink_wallet")?.value ?? null;
 
-    // ✅ พยายามอ่านจาก MetricsDaily (system) ก่อน
-    try {
-      const md = await prisma.metricsDaily.findFirst({
-        where: {
-          dayUtc: start,
-          userId: "system", // แถวสรุประบบ (system row)
+    // ถ้ายังไม่ login ด้วย wallet → ส่ง summary ว่าง ๆ กลับไป
+    if (!wallet) {
+      const empty = {
+        pointsToday: 0,
+        totalPoints: 0,
+        slk: 0,
+        uptimeHours: 0,
+        goalHours: DEFAULT_GOAL_HOURS,
+        avgBandwidthMbps: 0,
+        qf: 0,
+        trust: 0,
+        region: null as string | null,
+        ip: null as string | null,
+        version: null as string | null,
+      };
+
+      return NextResponse.json(
+        {
+          ok: true,
+          summary: empty,
+          ...empty,
         },
-        select: {
-          pointsEarned: true,
-          uptimePct: true,
-          avgBandwidth: true,
-          qfScore: true,
-          trustScore: true,
-        },
-      });
-
-      if (md) {
-        pointsToday = toNum(md.pointsEarned);
-
-        // uptimePct (0–100) → ชั่วโมงจาก 24 ชม. (ปัดทศนิยม 1 ตำแหน่ง)
-        if (md.uptimePct != null) {
-          const pct = toNum(md.uptimePct);
-          uptimeHours = Number(((pct / 100) * 24).toFixed(1));
-        }
-
-        // Mbps เฉลี่ย
-        if (md.avgBandwidth != null) {
-          avgBandwidthMbps = toNum(md.avgBandwidth);
-        }
-
-        // QF / Trust จาก MetricsDaily (0–100)
-        if (md.qfScore != null) {
-          qf = Math.max(0, Math.min(100, Math.round(toNum(md.qfScore))));
-        }
-        if (md.trustScore != null) {
-          trust = Math.max(0, Math.min(100, Math.round(toNum(md.trustScore))));
-        }
-      }
-
-      // สำรอง: ถ้ายังไม่มี pointsToday ใน MetricsDaily ให้ sum จาก MetricsHourly
-      if (pointsToday === 0) {
-        const mh = await prisma.metricsHourly.aggregate({
-          _sum: { pointsEarned: true },
-          where: {
-            userId: "system",
-            hourUtc: { gte: start, lt: end },
-          },
-        });
-        pointsToday = toNum(mh._sum.pointsEarned);
-      }
-    } catch {
-      // ถ้า schema / query พัง ให้กลับไปค่าเริ่มต้น 0
-      pointsToday = 0;
-      uptimeHours = 0;
-      avgBandwidthMbps = 0;
-      qf = 0;
-      trust = 0;
+        { status: 200 }
+      );
     }
 
-    // 🧩 Fallback เดิม: ถ้า QF/Trust ยังเป็น 0 ให้เดาจาก MetricsHourly ของวันนี้
-    if (qf === 0 || trust === 0) {
-      try {
-        const lastSystemHour = await prisma.metricsHourly.findFirst({
-          where: {
-            userId: "system",
-            hourUtc: { gte: start, lt: end },
-          },
-          orderBy: { hourUtc: "desc" },
-          select: { qfScore: true },
-        });
-
-        qf = Math.max(
-          0,
-          Math.min(100, Math.round(lastSystemHour?.qfScore ?? 0))
-        );
-
-        const nonZeroHours = await prisma.metricsHourly.count({
-          where: {
-            userId: "system",
-            hourUtc: { gte: start, lt: end },
-            pointsEarned: { gt: 0 },
-          },
-        });
-
-        // 1 ชม. ที่มี traffic = 5 คะแนน trust (max 100)
-        trust = Math.max(0, Math.min(100, nonZeroHours * 5));
-      } catch {
-        // ถ้า query พัง ก็ปล่อยเป็น 0
-      }
-    }
-
-    // รวมยอด balance ทั้งระบบ
-    const totalAgg = await prisma.pointBalance.aggregate({
-      _sum: { balance: true },
+    // หา user จาก wallet
+    const user = await prisma.user.findFirst({
+      where: { wallet },
     });
-    const totalPoints = toNum(totalAgg._sum.balance);
 
-    // แปลงเป็น SLK (ตอนนี้ใช้ totalPoints / 1000)
-    const slk = Number((totalPoints / 1000).toFixed(2));
+    if (!user) {
+      const empty = {
+        pointsToday: 0,
+        totalPoints: 0,
+        slk: 0,
+        uptimeHours: 0,
+        goalHours: DEFAULT_GOAL_HOURS,
+        avgBandwidthMbps: 0,
+        qf: 0,
+        trust: 0,
+        region: null as string | null,
+        ip: null as string | null,
+        version: null as string | null,
+      };
 
-    // optional: system meta (region/ip/version)
-    let region: string | null = null;
-    let ip: string | null = null;
-    let version: string | null = null;
-
-    try {
-      const [r, i, v] = await Promise.all([
-        prisma.setting.findFirst({ where: { key: "region" } }),
-        prisma.setting.findFirst({ where: { key: "ip" } }),
-        prisma.setting.findFirst({ where: { key: "version" } }),
-      ]);
-      region = r?.value ?? null;
-      ip = i?.value ?? null;
-      version = v?.value ?? null;
-    } catch {
-      // ถ้า setting พัง ก็ปล่อยเป็น null
+      return NextResponse.json(
+        {
+          ok: true,
+          summary: empty,
+          ...empty,
+        },
+        { status: 200 }
+      );
     }
 
-    const payload = {
+    const now = new Date();
+    const todayUtc = truncateToDayUtc(now);
+
+    // ใช้ Promise.all ให้เร็วที่สุด
+    const [todayMetrics, balance, latestHourly] = await Promise.all([
+      // MetricsDaily วันนี้ของ user
+      prisma.metricsDaily.findUnique({
+        where: {
+          dayUtc_userId_unique: {
+            dayUtc: todayUtc,
+            userId: user.id,
+          },
+        },
+      }),
+      // PointBalance ปัจจุบัน
+      prisma.pointBalance.findUnique({
+        where: { userId: user.id },
+      }),
+      // ใช้ MetricsHourly แถวล่าสุดของ user (เอา region / ip / version)
+      prisma.metricsHourly.findFirst({
+        where: { userId: user.id },
+        orderBy: { hourUtc: "desc" },
+      }),
+    ]);
+
+    const pointsToday = todayMetrics?.pointsEarned ?? 0;
+    const totalPoints = balance?.balance ?? 0;
+    const slk = balance?.slk ?? 0;
+
+    // แปล uptimePct → uptimeHours แบบคร่าว ๆ (จาก daily row วันนี้)
+    const uptimePct = todayMetrics?.uptimePct ?? null;
+    const uptimeHours =
+      uptimePct != null && Number.isFinite(uptimePct) ? Math.round((uptimePct / 100) * 24) : 0;
+
+    const avgBandwidthMbps = todayMetrics?.avgBandwidth ?? 0;
+    const qf = todayMetrics?.qfScore ?? 0;
+    const trust = todayMetrics?.trustScore ?? 0;
+
+    const region = latestHourly?.region ?? todayMetrics?.region ?? null;
+    const ip = latestHourly?.ip ?? todayMetrics?.ip ?? null;
+    const version = latestHourly?.version ?? todayMetrics?.version ?? null;
+
+    const summary = {
       pointsToday,
       totalPoints,
       slk,
       uptimeHours,
-      goalHours,
+      goalHours: DEFAULT_GOAL_HOURS,
       avgBandwidthMbps,
       qf,
       trust,
@@ -172,20 +152,20 @@ export async function GET() {
     return NextResponse.json(
       {
         ok: true,
-        summary: payload,
-        // เพื่อให้โค้ดเดิมที่ใช้ field แบน ๆ ยังใช้งานได้อยู่
-        ...payload,
+        range,
+        summary,
+        // duplicate fields เผื่อ client รุ่นเก่า
+        ...summary,
       },
-      {
-        headers: {
-          "Cache-Control": "no-store",
-        },
-      }
+      { status: 200 }
     );
   } catch (e: any) {
-    console.error("dashboard/summary error:", e);
+    console.error("/api/dashboard/summary error:", e);
     return NextResponse.json(
-      { ok: false, error: e?.message || "internal error" },
+      {
+        ok: false,
+        error: e?.message || "Internal server error",
+      },
       { status: 500 }
     );
   }

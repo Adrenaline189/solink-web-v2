@@ -1,3 +1,4 @@
+// app/dashboard/page.tsx
 "use client";
 
 import type { DashboardRange } from "@/types/dashboard";
@@ -13,7 +14,16 @@ export const dynamic = "force-dynamic";
 
 import { Card, CardContent } from "../../components/ui/card";
 import { Button } from "../../components/ui/button";
-import { Link2, Gauge, Award, Activity, Cloud, TrendingUp, BarChart4 } from "lucide-react";
+import {
+  Link2,
+  Gauge,
+  Award,
+  Activity,
+  Cloud,
+  TrendingUp,
+  BarChart4,
+  LineChart as LineIcon,
+} from "lucide-react";
 
 import type { DashboardSummary, HourlyPoint, Tx } from "../../types/dashboard";
 import { fetchHourly, fetchTransactions } from "../../lib/data/dashboard";
@@ -22,7 +32,7 @@ import HourlyPoints from "../../components/charts/HourlyPoints";
 import { useWallet } from "@solana/wallet-adapter-react";
 import { usePrefs } from "../../lib/prefs-client";
 
-/* Recharts (ใช้สำหรับกราฟ System Hourly จาก /api/dashboard/metrics) */
+/* Recharts */
 import {
   ResponsiveContainer,
   AreaChart,
@@ -32,24 +42,49 @@ import {
   YAxis,
   Tooltip,
   ReferenceLine,
+  BarChart,
+  Bar,
+  LineChart,
+  Line,
 } from "recharts";
 
 /* ---------------------------------- types ----------------------------------- */
 type SystemHourRow = { hourUtc: string; pointsEarned: number };
+
 type SystemMetricsResp = {
   ok: boolean;
-  daily: { dayUtc: string; pointsEarned: number } | null;
+  range: DashboardRange;
+  startUtc: string;
+  endUtc: string;
+  totalPoints: number;
   hourly: SystemHourRow[];
+};
+
+type SystemDailyRow = { dayUtc: string; label: string; pointsEarned: number };
+type SystemDailyResp = {
+  ok: boolean;
+  range: DashboardRange;
+  startUtc: string;
+  endUtc: string;
+  totalPoints: number;
+  days: SystemDailyRow[];
+};
+
+type StreakData = {
+  current: number;
+  best: number;
+};
+
+type UserDailyPoint = {
+  dayUtc: string;
+  label: string; // YYYY-MM-DD
+  points: number;
 };
 
 const TX_PAGE_SIZE = 20;
 
 /* -------------------------------- helpers ----------------------------------- */
 
-/**
- * ดึง summary จาก /api/dashboard/summary ตามช่วงเวลา (today / 7d / 30d)
- * รองรับทั้ง response แบบใหม่ (ok + summary) และแบบแบน (field ตรง ๆ)
- */
 async function fetchDashboardSummaryClient(
   range: DashboardRange,
   signal?: AbortSignal
@@ -68,12 +103,10 @@ async function fetchDashboardSummaryClient(
 
     const data = await res.json();
 
-    // แบบใหม่: { ok: true, summary: {...}, ...payload }
     if (data.ok && data.summary) {
       return data.summary as DashboardSummary;
     }
 
-    // fallback: แบบเก่า (field แบน ๆ)
     return {
       pointsToday: data.pointsToday ?? 0,
       totalPoints: data.totalPoints ?? 0,
@@ -105,24 +138,62 @@ function DashboardInner() {
 
   const [range, setRange] = useState<DashboardRange>("today");
   const { prefs } = usePrefs();
-  const tz = "UTC"; // ใช้โซนเวลาสากลแบบคงที่
+  const tz = "UTC";
 
   const { publicKey, connected } = useWallet();
   const address = publicKey?.toBase58();
   const [refLink, setRefLink] = useState("");
   const [copied, setCopied] = useState(false);
 
-  // ---- System Metrics (GLOBAL) ----
+  // ---- Sharing state (Start / Stop) ----
+  const [sharingActive, setSharingActive] = useState(false);
+  const [sharingLoading, setSharingLoading] = useState(false);
+  const [sharingError, setSharingError] = useState<string | null>(null);
+
+  // ---- System Metrics (GLOBAL hourly) ----
   const [sysLoading, setSysLoading] = useState(true);
   const [sysError, setSysError] = useState<string | null>(null);
-  const [sysDaily, setSysDaily] = useState<number>(0);
+  const [sysDailyTotalFromHourly, setSysDailyTotalFromHourly] = useState<number>(0);
   const [sysHourly, setSysHourly] = useState<SystemHourRow[]>([]);
+
+  // ---- System Daily (GLOBAL) ----
+  const [sysDailyLoading, setSysDailyLoading] = useState(true);
+  const [sysDailyError, setSysDailyError] = useState<string | null>(null);
+  const [sysDailySeries, setSysDailySeries] = useState<Array<{ label: string; points: number }>>(
+    []
+  );
+  const [sysDailyTotal, setSysDailyTotal] = useState<number>(0);
+
+  // ---- User Daily (via /api/dashboard/user-daily) ----
+  const [userDaily, setUserDaily] = useState<UserDailyPoint[]>([]);
+  const [userDailyLoading, setUserDailyLoading] = useState(false);
+  const [userDailyError, setUserDailyError] = useState<string | null>(null);
+  const [dailyRange, setDailyRange] = useState<"today" | "7d" | "30d">("7d");
+
+  // ---- Streak (via /api/dashboard/streak) ----
+  const [streak, setStreak] = useState<StreakData | null>(null);
+  const [streakError, setStreakError] = useState<string | null>(null);
 
   // Recent tx pagination
   const [txVisible, setTxVisible] = useState<number>(TX_PAGE_SIZE);
 
-  // refetch interval (ms)
+  // Node latency monitoring
+  const [latency, setLatency] = useState<number | null>(null);
+  const [latencySeries, setLatencySeries] = useState<Array<{ idx: number; ms: number }>>([]);
+
+  // refetch interval (ms) สำหรับ metrics ระบบ
   const SYS_REFRESH_MS = 30_000;
+
+  // ---- Convert SLK module state ----
+  const [convertPts, setConvertPts] = useState<string>("");
+  const [convertLoading, setConvertLoading] = useState(false);
+  const [convertError, setConvertError] = useState<string | null>(null);
+  const [convertSuccess, setConvertSuccess] = useState<string | null>(null);
+
+  const pointsNum = Number(convertPts || "0");
+  const slkRate = 1000; // 1000 pts = 1 SLK
+  const slkEstimated =
+    Number.isFinite(pointsNum) && pointsNum > 0 ? (pointsNum / slkRate).toFixed(2) : "0.00";
 
   /* Referral link (local only สำหรับตอนนี้) */
   useEffect(() => {
@@ -187,6 +258,11 @@ function DashboardInner() {
     })();
   }, []);
 
+  /* ให้ dailyRange ตาม range เสมอ (ใช้ range เดียวกับ dashboard) */
+  useEffect(() => {
+    setDailyRange(range);
+  }, [range]);
+
   /* load summary + user hourly + tx */
   const refresh = useCallback(() => {
     const ac = new AbortController();
@@ -221,32 +297,222 @@ function DashboardInner() {
     setTxVisible(TX_PAGE_SIZE);
   }, [txData]);
 
-  /* load System Metrics จาก /api/dashboard/metrics + auto refresh */
-  const loadSystemMetrics = useCallback(async (signal?: AbortSignal) => {
-    try {
-      setSysLoading(true);
-      const res = await fetch("/api/dashboard/metrics", { cache: "no-store", signal });
-      if (!res.ok) throw new Error("Failed to fetch /api/dashboard/metrics");
-      const json: SystemMetricsResp = await res.json();
-      setSysDaily(json.daily?.pointsEarned ?? 0);
-      setSysHourly(Array.isArray(json.hourly) ? json.hourly : []);
-      setSysError(null);
-    } catch (e: any) {
-      setSysError(e?.message || "Failed to fetch metrics");
-    } finally {
-      setSysLoading(false);
-    }
-  }, []);
+  /* load System Metrics (GLOBAL Hourly) จาก /api/dashboard/metrics + auto refresh */
+  const loadSystemMetrics = useCallback(
+    async (r: DashboardRange, signal?: AbortSignal) => {
+      try {
+        setSysLoading(true);
+        const res = await fetch(`/api/dashboard/metrics?range=${r}`, {
+          cache: "no-store",
+          signal,
+        });
+        if (!res.ok) throw new Error("Failed to fetch /api/dashboard/metrics");
+        const json: SystemMetricsResp = await res.json();
+        setSysDailyTotalFromHourly(json.totalPoints ?? 0);
+        setSysHourly(Array.isArray(json.hourly) ? json.hourly : []);
+        setSysError(null);
+      } catch (e: any) {
+        console.error("metrics error:", e);
+        setSysError(e?.message || "Failed to fetch metrics");
+      } finally {
+        setSysLoading(false);
+      }
+    },
+    []
+  );
 
   useEffect(() => {
     const ac = new AbortController();
-    loadSystemMetrics(ac.signal);
-    const t = setInterval(() => loadSystemMetrics(), SYS_REFRESH_MS);
+    loadSystemMetrics(range, ac.signal);
+    const t = setInterval(() => loadSystemMetrics(range), SYS_REFRESH_MS);
     return () => {
       ac.abort();
       clearInterval(t);
     };
-  }, [loadSystemMetrics]);
+  }, [loadSystemMetrics, range]);
+
+  /* System Daily (GLOBAL) จาก /api/dashboard/system-daily */
+  const loadSystemDaily = useCallback(async (r: DashboardRange, signal?: AbortSignal) => {
+    try {
+      setSysDailyLoading(true);
+      const res = await fetch(`/api/dashboard/system-daily?range=${r}`, {
+        cache: "no-store",
+        signal,
+      });
+      if (!res.ok) throw new Error("Failed to fetch /api/dashboard/system-daily");
+      const json: SystemDailyResp = await res.json();
+      const series =
+        json.days?.map((d) => ({
+          label: d.label,
+          points: d.pointsEarned,
+        })) ?? [];
+      setSysDailySeries(series);
+      setSysDailyTotal(json.totalPoints ?? 0);
+      setSysDailyError(null);
+    } catch (e: any) {
+      console.error("system-daily error:", e);
+      setSysDailyError(e?.message || "Failed to fetch system daily stats");
+      setSysDailySeries([]);
+      setSysDailyTotal(0);
+    } finally {
+      setSysDailyLoading(false);
+    }
+  }, []);
+
+  // โหลด System Daily เมื่อ range เปลี่ยน
+  useEffect(() => {
+    const ac = new AbortController();
+    loadSystemDaily(range, ac.signal);
+    return () => ac.abort();
+  }, [loadSystemDaily, range]);
+
+  /* 3.1 โหลด Streak จาก /api/dashboard/streak */
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadStreak() {
+      try {
+        setStreakError(null);
+        const res = await fetch("/api/dashboard/streak");
+        const json = await res.json();
+        if (!res.ok || !json.ok) {
+          throw new Error(json?.error || "Failed to load streak");
+        }
+        if (!cancelled) {
+          setStreak({
+            current: json.current ?? 0,
+            best: json.best ?? 0,
+          });
+        }
+      } catch (e: any) {
+        console.error("streak fetch error:", e);
+        if (!cancelled) {
+          setStreak(null);
+          setStreakError(e?.message || "Failed to load streak");
+        }
+      }
+    }
+
+    loadStreak();
+
+    // ถ้าอยากให้ refresh เมื่อเปลี่ยน range สามารถเปลี่ยน [] เป็น [range]
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  /* 3.3 User Daily Points จาก /api/dashboard/user-daily?range=... */
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadUserDailyRange() {
+      try {
+        setUserDailyLoading(true);
+        setUserDailyError(null);
+        const res = await fetch(`/api/dashboard/user-daily?range=${dailyRange}`);
+        const json = await res.json();
+        if (!res.ok || !json.ok) {
+          throw new Error(json?.error || "Failed to load user daily points");
+        }
+        if (!cancelled) {
+          setUserDaily(json.items ?? []);
+        }
+      } catch (e: any) {
+        console.error("user-daily fetch error:", e);
+        if (!cancelled) {
+          setUserDaily([]);
+          setUserDailyError(e?.message || "Failed to load");
+        }
+      } finally {
+        if (!cancelled) {
+          setUserDailyLoading(false);
+        }
+      }
+    }
+
+    loadUserDailyRange();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [dailyRange]);
+
+  // Node ping latency monitor (real-time)
+  useEffect(() => {
+    let cancelled = false;
+
+    const pingOnce = async () => {
+      try {
+        const start = performance.now();
+        const res = await fetch(`/api/dashboard/ping?ts=${Date.now()}`, { cache: "no-store" });
+        const end = performance.now();
+        if (!res.ok) return;
+        const ms = end - start;
+        if (cancelled) return;
+        setLatency(ms);
+        setLatencySeries((prev) => {
+          const next = [...prev, { idx: (prev[prev.length - 1]?.idx ?? 0) + 1, ms }];
+          return next.slice(-24); // เก็บล่าสุด 24 sample
+        });
+      } catch {
+        // ignore
+      }
+    };
+
+    pingOnce();
+    const id = setInterval(pingOnce, 15_000);
+
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, []);
+
+  /* ------------------------------------------------------------------
+     AUTO HEARTBEAT WORKER  
+     ยิง /api/sharing/heartbeat ทุก 15 วินาที เมื่อ sharingActive = true
+  ------------------------------------------------------------------ */
+  useEffect(() => {
+    if (!connected || !address) return;
+
+    let interval: NodeJS.Timeout | null = null;
+
+    const sendHeartbeat = async () => {
+      try {
+        const res = await fetch("/api/sharing/heartbeat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          cache: "no-store",
+          body: JSON.stringify({
+            bandwidthMbps: 10, // mock ค่า speed ตอนนี้ เอาไว้ก่อน
+            uptimeSec: 60, // mock uptime ต่อ 1 ช่วง
+          }),
+        });
+
+        const json = await res.json();
+        if (!json.ok) {
+          console.warn("Heartbeat failed:", json.error);
+        } else {
+          console.log("Heartbeat OK → +", json.pointsEarned, "pts");
+          refresh(); // รีโหลด summary + hourly + tx
+        }
+      } catch (e) {
+        console.error("Heartbeat error:", e);
+      }
+    };
+
+    if (sharingActive) {
+      console.log("🔥 Auto-heartbeat started");
+      interval = setInterval(sendHeartbeat, 15_000);
+      // ยิงครั้งแรกทันที
+      sendHeartbeat();
+    }
+
+    return () => {
+      if (interval) clearInterval(interval);
+      console.log("🛑 Auto-heartbeat stopped");
+    };
+  }, [sharingActive, connected, address, refresh]);
 
   const copy = async () => {
     try {
@@ -261,15 +527,36 @@ function DashboardInner() {
   // เตรียมข้อมูลสำหรับกราฟ System Hourly (UTC)
   const sysRows = useMemo(
     () =>
-      sysHourly.map((r) => ({
-        hour: new Date(r.hourUtc).getUTCHours().toString().padStart(2, "0") + ":00",
-        points: r.pointsEarned,
-      })),
-    [sysHourly]
+      sysHourly.map((r) => {
+        const d = new Date(r.hourUtc);
+        const h = d.getUTCHours().toString().padStart(2, "0");
+        const md = `${(d.getUTCMonth() + 1).toString().padStart(2, "0")}/${d
+          .getUTCDate()
+          .toString()
+          .padStart(2, "0")}`;
+        const label = range === "today" ? `${h}:00` : `${md} ${h}:00`;
+        return {
+          label,
+          points: r.pointsEarned,
+        };
+      }),
+    [sysHourly, range]
   );
+
   const sysPeak = useMemo(
     () => sysRows.reduce((m, r) => Math.max(m, r.points), 0),
     [sysRows]
+  );
+
+  const userDailyTotal = useMemo(
+    () => userDaily.reduce((sum, d) => sum + d.points, 0),
+    [userDaily]
+  );
+
+  // latency chart data
+  const latencyChartData = useMemo(
+    () => latencySeries.map((p) => ({ idx: p.idx, ms: Math.round(p.ms) })),
+    [latencySeries]
   );
 
   // Slice รายการ tx ตามจำนวนที่โชว์
@@ -280,6 +567,159 @@ function DashboardInner() {
     setTxVisible((prev) => Math.min(prev + TX_PAGE_SIZE, txData.length));
   };
 
+  const sysRangeLabel =
+    range === "today" ? "Today total" : range === "7d" ? "Last 7 days total" : "Last 30 days total";
+
+  const sysDailyLabel =
+    range === "today" ? "Today" : range === "7d" ? "Last 7 days" : "Last 30 days";
+
+  const userDailyLabel =
+    dailyRange === "today"
+      ? "Today"
+      : dailyRange === "7d"
+      ? "Last 7 days"
+      : "Last 30 days";
+
+  // Uptime meter V2 value (%)
+  const uptimePct =
+    summary && summary.goalHours > 0
+      ? Math.min(100, Math.round((summary.uptimeHours / summary.goalHours) * 100))
+      : 0;
+
+  // -------- Sharing: load initial status --------
+  useEffect(() => {
+    if (!connected || !address) {
+      setSharingActive(false);
+      setSharingError(null);
+      return;
+    }
+
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const res = await fetch("/api/sharing/status", { cache: "no-store" });
+        const json = await res.json();
+        if (!res.ok || !json.ok) {
+          throw new Error(json?.error || "Failed to load sharing status");
+        }
+        if (!cancelled) {
+          setSharingActive(!!json.active);
+          setSharingError(null);
+        }
+      } catch (e: any) {
+        console.error("sharing status error:", e);
+        if (!cancelled) {
+          setSharingActive(false);
+          setSharingError(e?.message || "Failed to load sharing status");
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [connected, address]);
+
+  // -------- Sharing: toggle handler (/api/sharing/toggle) --------
+  const handleToggleSharing = async () => {
+    if (!connected || !address) {
+      setSharingError("Please connect your wallet first.");
+      return;
+    }
+
+    try {
+      setSharingLoading(true);
+      setSharingError(null);
+
+      const res = await fetch("/api/sharing/toggle", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        cache: "no-store",
+      });
+
+      const json = await res.json();
+      if (!res.ok || !json.ok) {
+        throw new Error(json?.error || "Failed to toggle sharing");
+      }
+
+      setSharingActive(!!json.active);
+    } catch (e: any) {
+      console.error("sharing toggle error:", e);
+      setSharingError(e?.message || "Failed to toggle sharing");
+    } finally {
+      setSharingLoading(false);
+    }
+  };
+
+  // -------- Convert handler (เรียก API /api/points/convert) --------
+  const handleConvert = async () => {
+    setConvertError(null);
+    setConvertSuccess(null);
+
+    if (!connected || !address) {
+      setConvertError("Please connect your wallet first.");
+      return;
+    }
+
+    if (!Number.isFinite(pointsNum) || pointsNum <= 0) {
+      setConvertError("Please enter points greater than zero.");
+      return;
+    }
+
+    if (!summary || summary.totalPoints <= 0) {
+      setConvertError("You have no points to convert yet.");
+      return;
+    }
+
+    if (pointsNum > summary.totalPoints) {
+      setConvertError("You cannot convert more points than your current balance.");
+      return;
+    }
+
+    try {
+      setConvertLoading(true);
+
+      const res = await fetch("/api/points/convert", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ wallet: address, points: pointsNum }),
+      });
+
+      const json = await res.json();
+
+      if (!res.ok || !json.ok) {
+        if (res.status === 403) {
+          setConvertError("Conversion is currently disabled.");
+        } else {
+          setConvertError(json.error || "Conversion failed.");
+        }
+        return;
+      }
+
+      setConvertSuccess(
+        `Converted ${json.pointsSpent.toLocaleString()} pts → ${json.slkReceived} SLK`
+      );
+
+      // refresh summary + tx หลัง convert สำเร็จ
+      refresh();
+      setConvertPts("");
+    } catch (e: any) {
+      console.error("convert error:", e);
+      setConvertError(e?.message || "Conversion error.");
+    } finally {
+      setConvertLoading(false);
+    }
+  };
+
+  const canConvert =
+    connected &&
+    !!address &&
+    !!summary &&
+    summary.totalPoints > 0 &&
+    Number.isFinite(pointsNum) &&
+    pointsNum > 0;
+
   return (
     <div className="min-h-screen text-slate-100 p-6">
       <div className="max-w-7xl mx-auto">
@@ -287,15 +727,56 @@ function DashboardInner() {
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6">
           <div>
             <h1 className="text-3xl font-bold tracking-tight">Solink Dashboard</h1>
-            <p className="text-slate-400">{loading ? "Loading data…" : "Wired to API routes."}</p>
+            <p className="text-slate-400">
+              {loading ? "Loading data…" : "Wired to API routes."}
+            </p>
             {err && <p className="text-rose-400 text-sm mt-1">Error: {err}</p>}
+
+            <p className="text-xs text-slate-400 mt-1">
+              Sharing:{" "}
+              {!connected ? (
+                <span className="text-slate-400">
+                  Connect your wallet to start
+                </span>
+              ) : (
+                <span
+                  className={
+                    sharingActive ? "text-emerald-400" : "text-amber-400"
+                  }
+                >
+                  {sharingActive ? "Active" : "Paused"}
+                </span>
+              )}
+            </p>
+            {sharingError && (
+              <p className="text-[11px] text-rose-400 mt-1">
+                Sharing error: {sharingError}
+              </p>
+            )}
           </div>
 
           {/* Wallet + Start Sharing */}
           <div className="wa-equal flex items-center gap-3">
             <WalletMultiButton />
-            <Button variant="secondary" className="rounded-2xl px-5 h-12">
-              Start Sharing Bandwidth <Link2 className="ml-2 h-4 w-4" />
+            <Button
+              variant="secondary"
+              className="rounded-2xl px-5 h-12"
+              onClick={handleToggleSharing}
+              disabled={sharingLoading || !connected}
+              title={
+                !connected
+                  ? "Connect your wallet first"
+                  : sharingActive
+                  ? "Stop sharing bandwidth"
+                  : "Start sharing bandwidth"
+              }
+            >
+              {sharingLoading
+                ? "Updating…"
+                : sharingActive
+                ? "Stop Sharing"
+                : "Start Sharing Bandwidth"}{" "}
+              <Link2 className="ml-2 h-4 w-4" />
             </Button>
           </div>
         </div>
@@ -347,10 +828,10 @@ function DashboardInner() {
             </CardContent>
           </Card>
 
-          {/* Quality Factor & Trust */}
+          {/* Quality Factor, Trust & Uptime meter V2 */}
           <Card>
             <CardContent className="p-5">
-              <h3 className="text-lg font-semibold mb-3">Quality Factor &amp; Trust Score</h3>
+              <h3 className="text-lg font-semibold mb-3">Quality &amp; Reliability</h3>
               <Meter
                 label="Quality Factor"
                 value={summary?.qf ?? 0}
@@ -362,23 +843,31 @@ function DashboardInner() {
                 value={summary?.trust ?? 0}
                 color="from-emerald-400 to-cyan-400"
               />
+              <div className="h-3" />
+              <Meter
+                label="Uptime Today"
+                value={uptimePct}
+                color="from-sky-400 to-emerald-400"
+              />
               <div className="text-sm text-slate-400 mt-2">
-                Note: QF considers p50 latency, jitter, and session stability.
+                Uptime target is computed from your daily goal hours.
               </div>
             </CardContent>
           </Card>
         </div>
 
-        {/* System (GLOBAL) Hourly */}
+        {/* System Hourly + System Daily (GLOBAL) */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
-          <Card className="lg:col-span-3">
+          {/* System Hourly */}
+          <Card className="lg:col-span-2">
             <CardContent className="p-5">
               <div className="flex items-center justify-between mb-3">
                 <h3 className="text-lg font-semibold flex items-center gap-2">
                   <BarChart4 className="h-4 w-4" /> System Hourly (UTC)
                 </h3>
                 <div className="text-xs text-slate-400">
-                  Today Total: {sysLoading ? "—" : sysDaily.toLocaleString()} pts
+                  {sysRangeLabel}:{" "}
+                  {sysLoading ? "—" : sysDailyTotalFromHourly.toLocaleString()} pts
                 </div>
               </div>
 
@@ -389,17 +878,21 @@ function DashboardInner() {
                   </div>
                 ) : sysError ? (
                   <div className="text-rose-400">{sysError}</div>
+                ) : sysRows.length === 0 ? (
+                  <div className="flex h-full items-center justify-center text-slate-500 text-sm">
+                    No system activity in this range.
+                  </div>
                 ) : (
                   <ResponsiveContainer width="100%" height="100%">
                     <AreaChart data={sysRows} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
                       <defs>
                         <linearGradient id="sysG" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopOpacity={0.35} />
-                          <stop offset="95%" stopOpacity={0.05} />
+                          <stop offset="5%" stopColor="#22d3ee" stopOpacity={0.35} />
+                          <stop offset="95%" stopColor="#22d3ee" stopOpacity={0.05} />
                         </linearGradient>
                       </defs>
                       <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis dataKey="hour" />
+                      <XAxis dataKey="label" />
                       <YAxis allowDecimals={false} />
                       <Tooltip
                         contentStyle={{
@@ -411,13 +904,12 @@ function DashboardInner() {
                         labelStyle={{ color: "#e5e7eb", fontSize: 12 }}
                         itemStyle={{ color: "#22d3ee", fontSize: 12 }}
                         formatter={(v: number) => [`Points : ${v.toLocaleString()} pts`, ""]}
-                        labelFormatter={(l: any) => `UTC ${l}`}
                       />
                       <ReferenceLine y={0} />
                       <Area
                         type="monotone"
                         dataKey="points"
-                        stroke="currentColor"
+                        stroke="#22d3ee"
                         strokeWidth={2}
                         fillOpacity={1}
                         fill="url(#sysG)"
@@ -431,6 +923,56 @@ function DashboardInner() {
               </div>
             </CardContent>
           </Card>
+
+          {/* System Daily (GLOBAL) */}
+          <Card className="lg:col-span-1">
+            <CardContent className="p-5">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-lg font-semibold flex items-center gap-2">
+                  <LineIcon className="h-4 w-4" /> System Daily (GLOBAL)
+                </h3>
+                <div className="text-xs text-slate-400">
+                  {sysDailyLabel}: {sysDailyLoading ? "—" : sysDailyTotal.toLocaleString()} pts
+                </div>
+              </div>
+              <div className="w-full h-64 rounded-2xl border border-slate-800 bg-slate-950/40 p-2">
+                {sysDailyLoading ? (
+                  <div className="flex h-full items-center justify-center text-slate-500">
+                    Loading…
+                  </div>
+                ) : sysDailyError ? (
+                  <div className="text-rose-400 text-sm">{sysDailyError}</div>
+                ) : sysDailySeries.length === 0 ? (
+                  <div className="flex h-full items-center justify-center text-slate-500 text-sm">
+                    No daily data for this range.
+                  </div>
+                ) : (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={sysDailySeries} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                      <XAxis dataKey="label" tick={{ fontSize: 10 }} />
+                      <YAxis allowDecimals={false} />
+                      <Tooltip
+                        contentStyle={{
+                          backgroundColor: "rgba(15,23,42,0.96)",
+                          border: "1px solid rgba(148,163,184,0.5)",
+                          borderRadius: 12,
+                          padding: "8px 10px",
+                        }}
+                        labelStyle={{ color: "#e5e7eb", fontSize: 12 }}
+                        itemStyle={{ color: "#22c55e", fontSize: 12 }}
+                        formatter={(v: number) => [`${v.toLocaleString()} pts`, "System daily"]}
+                      />
+                      <Bar dataKey="points" radius={[6, 6, 0, 0]} fill="#22c55e" />
+                    </BarChart>
+                  </ResponsiveContainer>
+                )}
+              </div>
+              <div className="mt-2 text-xs text-slate-500">
+                Aurora range color: emerald → sky (global daily load).
+              </div>
+            </CardContent>
+          </Card>
         </div>
 
         {/* Filters */}
@@ -440,6 +982,157 @@ function DashboardInner() {
             <span className="text-xs text-slate-400">TZ:</span>
             <span className="text-xs text-slate-300">{tz}</span>
           </div>
+        </div>
+
+        {/* User Daily + Streak + Convert */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
+          {/* User Daily graph */}
+          <Card className="lg:col-span-2">
+            <CardContent className="p-5">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-lg font-semibold flex items-center gap-2">
+                  <LineIcon className="h-4 w-4" /> User Daily Points
+                </h3>
+                <div className="text-xs text-slate-400">
+                  {userDailyLabel}: {userDailyLoading ? "—" : userDailyTotal.toLocaleString()} pts
+                </div>
+              </div>
+              <div className="w-full h-64 rounded-2xl border border-slate-800 bg-slate-950/40 p-2">
+                {!connected ? (
+                  <div className="flex h-full items-center justify-center text-slate-500 text-sm">
+                    Connect your wallet to see your daily points.
+                  </div>
+                ) : userDailyLoading ? (
+                  <div className="flex h-full items-center justify-center text-slate-500">
+                    Loading…
+                  </div>
+                ) : userDailyError ? (
+                  <div className="text-rose-400 text-sm">{userDailyError}</div>
+                ) : userDaily.length === 0 ? (
+                  <div className="flex h-full items-center justify-center text-slate-500 text-sm">
+                    No activity yet in this range.
+                  </div>
+                ) : (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart
+                      data={userDaily}
+                      margin={{ top: 8, right: 12, left: 0, bottom: 0 }}
+                    >
+                      <defs>
+                        <linearGradient id="userDailyG" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="#6366f1" stopOpacity={0.35} />
+                          <stop offset="95%" stopColor="#6366f1" stopOpacity={0.05} />
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis dataKey="label" tick={{ fontSize: 10 }} />
+                      <YAxis allowDecimals={false} />
+                      <Tooltip
+                        contentStyle={{
+                          backgroundColor: "rgba(15,23,42,0.96)",
+                          border: "1px solid rgba(148,163,184,0.5)",
+                          borderRadius: 12,
+                          padding: "8px 10px",
+                        }}
+                        labelStyle={{ color: "#e5e7eb", fontSize: 12 }}
+                        itemStyle={{ color: "#6366f1", fontSize: 12 }}
+                        formatter={(v: number) => [`${v.toLocaleString()} pts`, "Daily points"]}
+                      />
+                      <Area
+                        type="monotone"
+                        dataKey="points"
+                        stroke="#6366f1"
+                        strokeWidth={2}
+                        fill="url(#userDailyG)"
+                        fillOpacity={1}
+                      />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Streak + Convert module */}
+          <Card>
+            <CardContent className="p-5 space-y-4">
+              <div>
+                <h3 className="text-lg font-semibold mb-2">Streak</h3>
+                <div className="flex items-center justify-between text-sm mb-1">
+                  <span className="text-slate-400">Current streak</span>
+                  <span className="font-semibold text-emerald-400">
+                    {streak
+                      ? `${streak.current} day${streak.current === 1 ? "" : "s"}`
+                      : "0 days"}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-slate-400">Best streak</span>
+                  <span className="font-semibold text-sky-400">
+                    {streak ? `${streak.best} day${streak.best === 1 ? "" : "s"}` : "0 days"}
+                  </span>
+                </div>
+                {streakError && (
+                  <p className="mt-2 text-xs text-rose-400">
+                    Error loading streak: {streakError}
+                  </p>
+                )}
+                {!streakError && (
+                  <p className="text-xs text-slate-500 mt-2">
+                    Streak counts consecutive days where your points are above zero.
+                  </p>
+                )}
+              </div>
+
+              <div className="border-t border-slate-800 pt-3">
+                <h3 className="text-lg font-semibold mb-2">Convert to SLK</h3>
+                <p className="text-xs text-slate-400 mb-2">
+                  Preview and convert your points to SLK. Example rate:{" "}
+                  <span className="font-semibold">1000 pts = 1 SLK</span>.
+                </p>
+                <label
+                  htmlFor="convert-pts"
+                  className="text-xs text-slate-400 flex items-center justify-between mb-1"
+                >
+                  <span>Points to convert</span>
+                  <span className="text-slate-500">
+                    Available: {summary?.totalPoints.toLocaleString() ?? "—"} pts
+                  </span>
+                </label>
+                <input
+                  id="convert-pts"
+                  inputMode="numeric"
+                  value={convertPts}
+                  onChange={(e) => setConvertPts(e.target.value)}
+                  placeholder="Enter points…"
+                  className="w-full rounded-xl bg-slate-900/60 border border-slate-700 px-3 py-2 text-sm text-slate-200 mb-2"
+                />
+                <div className="flex items-center justify-between text-sm mb-3">
+                  <span className="text-slate-400">Estimated SLK</span>
+                  <span className="font-semibold text-cyan-400">{slkEstimated} SLK</span>
+                </div>
+                <Button
+                  onClick={handleConvert}
+                  disabled={convertLoading || !canConvert}
+                  className={"w-full rounded-xl " + (convertLoading ? "opacity-70" : "")}
+                  title="Convert points to SLK"
+                >
+                  {convertLoading ? "Converting…" : "Convert"}
+                </Button>
+                {convertError && (
+                  <p className="text-[11px] text-rose-400 mt-1">{convertError}</p>
+                )}
+                {convertSuccess && (
+                  <p className="text-[11px] text-emerald-400 mt-1">{convertSuccess}</p>
+                )}
+                {!convertError && !convertSuccess && (
+                  <p className="text-[11px] text-slate-500 mt-1">
+                    This will convert your off-chain points to SLK according to the current rate.
+                  </p>
+                )}
+              </div>
+            </CardContent>
+          </Card>
         </div>
 
         {/* Invite & Status */}
@@ -483,6 +1176,66 @@ function DashboardInner() {
               <StatusItem label="Region" value={summary?.region ?? "—"} />
               <StatusItem label="IP Address" value={summary?.ip ?? "—"} />
               <StatusItem label="Client Version" value={summary?.version ?? "—"} />
+              <StatusItem
+                label="Latency"
+                value={latency != null ? `~${Math.round(latency)} ms` : "Measuring…"}
+              />
+
+              {/* Session stability chart (latency history) */}
+              <div className="mt-4">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-sm text-slate-300">Session stability</span>
+                  <span className="text-xs text-slate-500">
+                    Lower is better (ping latency)
+                  </span>
+                </div>
+                <div className="w-full h-28 rounded-xl border border-slate-800 bg-slate-950/60 p-1.5">
+                  {latencyChartData.length < 2 ? (
+                    <div className="flex h-full items-center justify-center text-[11px] text-slate-500">
+                      Collecting samples…
+                    </div>
+                  ) : (
+                    <ResponsiveContainer width="100%" height="100%">
+                      <LineChart data={latencyChartData}>
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                        <XAxis
+                          dataKey="idx"
+                          tickFormatter={() => ""}
+                          tick={{ fontSize: 8 }}
+                          axisLine={false}
+                          tickLine={false}
+                        />
+                        <YAxis
+                          tick={{ fontSize: 8 }}
+                          tickLine={false}
+                          axisLine={false}
+                          width={30}
+                        />
+                        <Tooltip
+                          contentStyle={{
+                            backgroundColor: "rgba(15,23,42,0.96)",
+                            border: "1px solid rgba(148,163,184,0.5)",
+                            borderRadius: 12,
+                            padding: "6px 8px",
+                          }}
+                          labelStyle={{ color: "#e5e7eb", fontSize: 11 }}
+                          itemStyle={{ color: "#f97316", fontSize: 11 }}
+                          formatter={(v: number) => [`${v.toFixed(0)} ms`, "Latency"]}
+                          labelFormatter={(idx: any) => `Sample #${idx}`}
+                        />
+                        <Line
+                          type="monotone"
+                          dataKey="ms"
+                          stroke="#f97316"
+                          strokeWidth={1.8}
+                          dot={false}
+                          activeDot={{ r: 3 }}
+                        />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  )}
+                </div>
+              </div>
             </CardContent>
           </Card>
         </div>
@@ -520,14 +1273,22 @@ function DashboardInner() {
                           <td className="py-2 pr-4 text-slate-700">—</td>
                         </tr>
                       ))
-                    : txPage.map((r, i) => (
-                        <tr key={i} className="border-t border-slate-800">
-                          <td className="py-2 pr-4 whitespace-nowrap">{r.ts}</td>
-                          <td className="py-2 pr-4">{r.type}</td>
-                          <td className="py-2 pr-4 font-semibold">{r.amount}</td>
-                          <td className="py-2 pr-4 text-slate-400">{r.note}</td>
-                        </tr>
-                      ))}
+                    : txPage.map((r, i) => {
+                        const typeDesc = describeTxType(r.type);
+                        const note = r.note?.trim();
+                        return (
+                          <tr key={i} className="border-t border-slate-800">
+                            <td className="py-2 pr-4 whitespace-nowrap">{r.ts}</td>
+                            <td className="py-2 pr-4">
+                              <span className={typeDesc.className}>{typeDesc.label}</span>
+                            </td>
+                            <td className="py-2 pr-4 font-semibold">
+                              {formatAmountPts(r.amount)}
+                            </td>
+                            <td className="py-2 pr-4 text-slate-400">{note || "—"}</td>
+                          </tr>
+                        );
+                      })}
                 </tbody>
                 {!loading && canLoadMore && (
                   <tfoot>
@@ -603,7 +1364,7 @@ function Meter({ label, value, color }: { label: string; value: number; color: s
   const v = Math.max(0, Math.min(100, value ?? 0));
   return (
     <div>
-      <div className="flex items-center justify_between text-sm mb-1">
+      <div className="flex items-center justify-between text-sm mb-1">
         <span className="text-slate-300">{label}</span>
         <span className="text-slate-400">{v}%</span>
       </div>
@@ -614,13 +1375,68 @@ function Meter({ label, value, color }: { label: string; value: number; color: s
   );
 }
 
-function StatusItem({ label, value, positive }: { label: string; value: string; positive?: boolean }) {
+function StatusItem({
+  label,
+  value,
+  positive,
+}: {
+  label: string;
+  value: string;
+  positive?: boolean;
+}) {
   return (
     <div className="flex items-center justify-between py-1.5 border-b border-slate-800 last:border-none">
       <span className="text-slate-400 text-sm">{label}</span>
       <span className={`text-sm ${positive ? "text-emerald-400" : "text-slate-300"}`}>{value}</span>
     </div>
   );
+}
+
+/* --------- Tx type formatting (3A: human-friendly labels & badges) --------- */
+
+type TxTypeDescriptor = {
+  label: string;
+  className: string;
+};
+
+function describeTxType(type: string): TxTypeDescriptor {
+  switch (type) {
+    case "extension_farm":
+      return {
+        label: "Extension farming reward",
+        className:
+          "inline-flex items-center rounded-full bg-cyan-500/10 text-cyan-300 border border-cyan-500/30 px-2.5 py-0.5 text-xs font-medium",
+      };
+    case "referral":
+      return {
+        label: "Referral",
+        className:
+          "inline-flex items-center rounded-full bg-violet-500/10 text-violet-300 border border-violet-500/30 px-2.5 py-0.5 text-xs font-medium",
+      };
+    case "referral_bonus":
+      return {
+        label: "Referral bonus",
+        className:
+          "inline-flex items-center rounded-full bg-emerald-500/10 text-emerald-300 border border-emerald-500/30 px-2.5 py-0.5 text-xs font-medium",
+      };
+    case "convert_debit":
+      return {
+        label: "Convert to SLK",
+        className:
+          "inline-flex items-center rounded-full bg-amber-500/10 text-amber-300 border border-amber-500/30 px-2.5 py-0.5 text-xs font-medium",
+      };
+    default:
+      return {
+        label: type.replace(/_/g, " "),
+        className:
+          "inline-flex items-center rounded-full bg-slate-700/40 text-slate-200 border border-slate-500/40 px-2.5 py-0.5 text-xs font-medium",
+      };
+  }
+}
+
+function formatAmountPts(v: number): string {
+  const n = Number.isFinite(v) ? v : 0;
+  return `${n.toLocaleString()} pts`;
 }
 
 function RangeRadios({

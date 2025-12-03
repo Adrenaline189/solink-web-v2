@@ -2,6 +2,7 @@
 import { Suspense } from "react";
 import Script from "next/script";
 export const dynamic = "force-dynamic";
+
 import "./globals.css";
 import type { Metadata } from "next";
 import Link from "next/link";
@@ -18,13 +19,13 @@ import { Analytics } from "@vercel/analytics/react";
 import { SpeedInsights } from "@vercel/speed-insights/next";
 import Aurora from "@/components/Aurora";
 
-/* ✅ Solana wallet provider (คงไว้) */
+/* Solana wallet provider */
 import WalletProviders from "@/lib/solana/WalletProviders";
 
-/* ✅ รวม React Query + wagmi + RainbowKit */
+/* รวม React Query + wagmi + RainbowKit */
 import Providers from "./providers";
 
-/* ====== Metadata (run server) ====== */
+/* ===== Metadata ===== */
 const metadataBaseUrl =
   process.env.NEXT_PUBLIC_SITE_URL
     ? new URL(process.env.NEXT_PUBLIC_SITE_URL)
@@ -61,7 +62,7 @@ export const metadata: Metadata = {
   },
 };
 
-/* ====== theme + timezone fast hydrate ====== */
+/* ===== theme + timezone hydration ===== */
 const THEME_TZ_INIT = `
 (function(){
   try {
@@ -99,9 +100,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       </head>
 
       <body className="min-h-screen bg-slate-950 text-slate-100 relative">
-        {/* ✅ ครอบ React Query + wagmi + RainbowKit */}
         <Providers>
-          {/* ✅ ซ้อน Solana wallet providers ไว้ข้างใน */}
           <WalletProviders>
             <Aurora />
 
@@ -133,7 +132,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                   <MainNav items={[...NAV_ITEMS]} />
                 </div>
 
-                {/* ❌ Connect Navbar (ตอนนี้ซ่อนปุ่มเชื่อมต่อบนแถบเมนู) */}
                 <div className="flex items-center gap-3">
                   <RefBadge />
                   <MobileMenu items={[...NAV_ITEMS]} />

@@ -1,139 +1,146 @@
 // app/api/dashboard/hourly/route.ts
 import { NextResponse } from "next/server";
+import { cookies } from "next/headers";
 import { prisma } from "@/lib/prisma";
-import type { DashboardRange, HourlyPoint } from "@/types/dashboard";
-import { getHourly as getHourlySim } from "@/lib/dev-sim"; // fallback เมื่อ DB ใช้ไม่ได้
+import type { DashboardRange } from "@/types/dashboard";
 
-// บังคับให้รันแบบ SSR ทุกครั้ง (ไม่ใช้ cache ฝั่ง Next)
-export const dynamic = "force-dynamic";
+/**
+ * GET /api/dashboard/hourly?range=today|7d|30d
+ *
+ * คืนข้อมูลกราฟ Hourly Points (User) สำหรับ Dashboard
+ * - อิงจาก MetricsHourly ของ user ปัจจุบัน (userId จาก wallet)
+ * - แปลงเป็น array ของ HourlyPoint (label + points)
+ *
+ * response:
+ * {
+ *   ok: true,
+ *   range: "today" | "7d" | "30d",
+ *   startUtc: string | null,
+ *   endUtc: string | null,
+ *   items: Array<{ label: string; points: number }>
+ * }
+ */
 
-/* -------------------------- UTC helpers -------------------------- */
-function pad(n: number) {
-  return n < 10 ? `0${n}` : `${n}`;
+function truncateToDayUtc(d: Date): Date {
+  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 0, 0, 0, 0));
 }
 
-/** label แบบ MM/DD โดยอิง UTC */
-function mdLabelUTC(d: Date) {
-  return `${pad(d.getUTCMonth() + 1)}/${pad(d.getUTCDate())}`;
+function getRangeBounds(range: DashboardRange): { startUtc: Date; endUtc: Date } {
+  const now = new Date();
+  const endDay = truncateToDayUtc(now);
+  let startDay = new Date(endDay);
+
+  switch (range) {
+    case "7d": {
+      startDay = new Date(endDay);
+      startDay.setUTCDate(startDay.getUTCDate() - 6);
+      break;
+    }
+    case "30d": {
+      startDay = new Date(endDay);
+      startDay.setUTCDate(startDay.getUTCDate() - 29);
+      break;
+    }
+    case "today":
+    default: {
+      startDay = new Date(endDay);
+      break;
+    }
+  }
+
+  const startUtc = startDay;
+  const endUtc = new Date(endDay);
+  endUtc.setUTCDate(endUtc.getUTCDate() + 1);
+
+  return { startUtc, endUtc };
 }
 
-/** เซ็ตเวลาเป็น 00:00:00.000 UTC ของวันที่ระบุ (ดีฟอลต์วันนี้) */
-function startOfUTC(date = new Date()) {
-  const d = new Date(date);
-  d.setUTCHours(0, 0, 0, 0);
-  return d;
-}
-
-/** บวก/ลบวันแบบ UTC โดยไม่ทำให้ข้ามโซน */
-function addDaysUTC(d: Date, n: number) {
-  const x = new Date(d);
-  x.setUTCDate(x.getUTCDate() + n);
-  return x;
-}
-
-/** แปลงค่าที่อาจเป็น BigInt/nullable ให้เป็น number ปลอดภัย */
-function toNum(v: unknown): number {
-  if (typeof v === "bigint") return Number(v);
-  if (typeof v === "number") return v;
-  const n = Number((v as any) ?? 0);
-  return Number.isFinite(n) ? n : 0;
-}
-
-/** จำกัดค่า range ให้อยู่ในชุดที่อนุญาต */
-function normalizeRange(raw: string | null): DashboardRange {
-  const v = (raw ?? "today").toLowerCase();
-  return v === "7d" || v === "30d" || v === "today" ? v : "today";
-}
-
-/* ------------------------------- GET ------------------------------ */
 export async function GET(req: Request) {
   try {
-    const url = new URL(req.url);
-    const range = normalizeRange(url.searchParams.get("range"));
+    const { searchParams } = new URL(req.url);
+    const rangeParam = searchParams.get("range") as DashboardRange | null;
+    const range: DashboardRange = rangeParam === "7d" || rangeParam === "30d" ? rangeParam : "today";
 
-    // ===== TODAY: คืน 24 bucket (รายชั่วโมง, UTC) =====
-    if (range === "today") {
-      const start = startOfUTC(); // วันนี้ 00:00 UTC
-      const end = addDaysUTC(start, 1); // พรุ่งนี้ 00:00 UTC
+    const cookieStore = cookies();
+    const wallet = cookieStore.get("solink_wallet")?.value ?? null;
 
-      // เตรียม 24 ช่อง
-      const buckets: HourlyPoint[] = Array.from({ length: 24 }, (_, h) => ({
-        time: `${pad(h)}:00`,
-        points: 0,
-      }));
-
-      try {
-        // ดึงอีเวนต์ในช่วงวันนี้ (UTC)
-        const rows = await prisma.pointEvent.findMany({
-          where: { createdAt: { gte: start, lt: end } },
-          select: { createdAt: true, amount: true },
-        });
-
-        for (const r of rows) {
-          const h = new Date(r.createdAt).getUTCHours();
-          buckets[h].points += toNum(r.amount);
-        }
-
-        return NextResponse.json(buckets, {
-          // ให้พฤติกรรม cache แบบ validate ทุกครั้ง (สอดคล้องกับที่คุณเช็ก)
-          headers: { "Cache-Control": "public, max-age=0, must-revalidate" },
-        });
-      } catch {
-        // DB ใช้ไม่ได้ → ใช้ข้อมูลจำลอง
-        return NextResponse.json(getHourlySim("today"), {
-          headers: { "Cache-Control": "public, max-age=0, must-revalidate" },
-        });
-      }
+    if (!wallet) {
+      return NextResponse.json(
+        {
+          ok: true,
+          range,
+          startUtc: null,
+          endUtc: null,
+          items: [] as Array<{ label: string; points: number }>,
+        },
+        { status: 200 }
+      );
     }
 
-    // ===== 7D / 30D: รวมยอดรายวัน (UTC) =====
-    const days = range === "7d" ? 7 : 30;
-    const end = addDaysUTC(startOfUTC(), 1); // พรุ่งนี้ 00:00 UTC
-    const start = addDaysUTC(end, -days); // n วันก่อนหน้า
+    const user = await prisma.user.findFirst({
+      where: { wallet },
+    });
 
-    // สร้าง labels ไล่จากเก่าสุด → ปัจจุบัน-1วัน (รวมทั้งหมด days วัน)
-    const labels: string[] = [];
-    for (let i = days - 1; i >= 0; i--) {
-      labels.push(mdLabelUTC(addDaysUTC(end, -1 - i)));
+    if (!user) {
+      return NextResponse.json(
+        {
+          ok: true,
+          range,
+          startUtc: null,
+          endUtc: null,
+          items: [] as Array<{ label: string; points: number }>,
+        },
+        { status: 200 }
+      );
     }
 
-    try {
-      const rows = await prisma.pointEvent.findMany({
-        where: { createdAt: { gte: start, lt: end } },
-        select: { createdAt: true, amount: true },
-      });
+    const { startUtc, endUtc } = getRangeBounds(range);
 
-      // รวมยอดต่อวัน (key = MM/DD โดยอิง UTC)
-      const daily = new Map<string, number>();
-      for (const r of rows) {
-        const d = new Date(r.createdAt);
-        const key = mdLabelUTC(d);
-        daily.set(key, (daily.get(key) ?? 0) + toNum(r.amount));
-      }
+    const rows = await prisma.metricsHourly.findMany({
+      where: {
+        userId: user.id,
+        hourUtc: {
+          gte: startUtc,
+          lt: endUtc,
+        },
+      },
+      orderBy: { hourUtc: "asc" },
+    });
 
-      const out: HourlyPoint[] = labels.map((lbl) => ({
-        time: lbl,
-        points: daily.get(lbl) ?? 0,
-      }));
+    // ใส่ type ให้ r เป็น any แบบ explicit เพื่อกัน noImplicitAny
+    const items = rows.map((r: any) => {
+      const d = new Date(r.hourUtc);
+      const h = d.getUTCHours().toString().padStart(2, "0");
+      const md = `${(d.getUTCMonth() + 1).toString().padStart(2, "0")}/${d
+        .getUTCDate()
+        .toString()
+        .padStart(2, "0")}`;
 
-      // ถ้าทั้งช่วงเป็นศูนย์หมด ให้ fallback เพื่อให้กราฟไม่โล่งบน demo
-      if (out.every((x) => x.points === 0)) {
-        return NextResponse.json(getHourlySim(range), {
-          headers: { "Cache-Control": "public, max-age=0, must-revalidate" },
-        });
-      }
+      const label = range === "today" ? `${h}:00` : `${md} ${h}:00`;
 
-      return NextResponse.json(out, {
-        headers: { "Cache-Control": "public, max-age=0, must-revalidate" },
-      });
-    } catch {
-      return NextResponse.json(getHourlySim(range), {
-        headers: { "Cache-Control": "public, max-age=0, must-revalidate" },
-      });
-    }
-  } catch (e: any) {
+      return {
+        label,
+        points: r.pointsEarned ?? 0,
+      };
+    });
+
     return NextResponse.json(
-      { ok: false, error: e?.message || "error" },
+      {
+        ok: true,
+        range,
+        startUtc: startUtc.toISOString(),
+        endUtc: endUtc.toISOString(),
+        items,
+      },
+      { status: 200 }
+    );
+  } catch (e: any) {
+    console.error("/api/dashboard/hourly error:", e);
+    return NextResponse.json(
+      {
+        ok: false,
+        error: e?.message || "Internal server error",
+      },
       { status: 500 }
     );
   }

@@ -1,6 +1,5 @@
 // scripts/rollup-worker.ts
 import "dotenv/config";
-
 import { startHourlyWorker } from "./rollup-hourly";
 
 function now() {

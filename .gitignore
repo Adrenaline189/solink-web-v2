@@ -14,3 +14,20 @@ next/
 *.pem
 *.key
 
+# Local editor settings
+.vscode/
+
+# Logs
+logs/
+.vscode/
+
+logs/
+# Local editor settings
+.vscode/
+
+# Logs
+logs/
+.env
+.env.*
+.env
+.env.*

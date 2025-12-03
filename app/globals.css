@@ -1,8 +1,9 @@
 /* stylelint-disable at-rule-no-unknown */
-@import "tailwindcss/base";
-@import "tailwindcss/components";
-@import "tailwindcss/utilities";
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 /* stylelint-enable at-rule-no-unknown */
+
 
 /* ใช้ธีมมืดเป็นดีฟอลต์ */
 :root {

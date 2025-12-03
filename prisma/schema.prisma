@@ -1,21 +1,11 @@
-// =========================
-//   Prisma Schema (Full)
-// =========================
-
-// ----- Prisma Client -----
 generator client {
   provider = "prisma-client-js"
 }
 
-// ----- PostgreSQL datasource -----
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
 }
-
-// =========================
-/*        MODELS          */
-// =========================
 
 model Setting {
   id     String  @id @default(cuid())
@@ -28,61 +18,69 @@ model Setting {
 }
 
 model User {
-  id        String        @id @default(cuid())
-  wallet    String?       @unique
-  createdAt DateTime      @default(now())
-  events    PointEvent[]
-
-  // optional back-relations
-  metricsHourly MetricsHourly[]
+  id            String          @id @default(cuid())
+  wallet        String?         @unique
+  createdAt     DateTime        @default(now())
   metricsDaily  MetricsDaily[]
+  metricsHourly MetricsHourly[]
+  pointBalance  PointBalance?
+  events        PointEvent[]
 }
 
 model PointEvent {
   id        String   @id @default(cuid())
   userId    String
-  user      User     @relation(fields: [userId], references: [id])
+  /// ประเภท event:
+  /// - extension_farm     → reward จาก extension
+  /// - referral           → แต้มจากเชิญเพื่อน
+  /// - referral_bonus     → แต้มโบนัส
+  /// - convert_debit      → ใช้แต้มไปแลก SLK (amount เป็นค่าลบ)
+  /// - admin_adjust       → ปรับยอดด้วยมือ
   type      String
+  /// จำนวนแต้มบน ledger:
+  /// - earn  = ค่าบวก
+  /// - spend = ค่าลบ (เช่น convert_debit)
   amount    Int
   meta      Json?
-  nonce     String?  @unique
   createdAt DateTime @default(now())
+  /// ป้องกัน double-spend / replay (ใส่ nonce จากฝั่ง client/api ได้)
+  nonce     String?  @unique
+  user      User     @relation(fields: [userId], references: [id])
 
-  @@index([userId, createdAt])   // เดิมมีแล้ว
-  @@index([createdAt])           // รวมกราฟทั้งระบบ
-  @@index([type, createdAt])     // กรองตาม type
+  @@index([userId, createdAt])
+  @@index([createdAt])
+  @@index([type, createdAt])
 }
 
 model PointBalance {
+  /// ใช้ userId เป็น primary key และ foreign key ไปที่ User.id
   userId    String   @id
+  /// ยอดแต้มคงเหลือปัจจุบัน
   balance   Int      @default(0)
   updatedAt DateTime @updatedAt
-  // @@index([updatedAt]) // เปิดใช้ถ้าคิวรีบ่อย
+  /// ยอด SLK off-chain ปัจจุบัน (ถ้าจะผูก on-chain ทีหลัง ให้เพิ่มตารางแยกได้)
+  slk       Float    @default(0)
+  user      User     @relation(fields: [userId], references: [id])
 }
-
-// =========================
-/*        METRICS          */
-// =========================
 
 model MetricsHourly {
   id           String   @id @default(cuid())
-
   /// ตัวแทนช่วงชั่วโมงแบบ UTC (เช่น 2025-11-11T10:00:00Z)
   hourUtc      DateTime
-
   /// ผู้ใช้เป้าหมาย (ว่าง = แถวสรุปทั้งระบบ)
   userId       String?
-  user         User?    @relation(fields: [userId], references: [id])
-
   pointsEarned Int      @default(0)
-  uptimePct    Float?   // 0..100
-  avgBandwidth Float?   // Mbps
+  uptimePct    Float?
+  avgBandwidth Float?
   qfScore      Float?
   trustScore   Float?
-
   createdAt    DateTime @default(now())
+  ip           String?
+  /// ✅ สถานะ node ล่าสุดในชั่วโมงนั้น
+  region       String?
+  version      String?
+  user         User?    @relation(fields: [userId], references: [id])
 
-  // คีย์ผสมสำหรับ upsert ต่อชั่วโมง/ผู้ใช้ (รวม userId = null)
   @@unique([hourUtc, userId], name: "hourUtc_userId_unique")
   @@index([hourUtc])
   @@index([userId])
@@ -90,39 +88,43 @@ model MetricsHourly {
 
 model MetricsDaily {
   id           String   @id @default(cuid())
-
   /// ตัวแทนช่วงวันแบบ UTC (เช่น 2025-11-11T00:00:00Z)
   dayUtc       DateTime
-
   /// ผู้ใช้เป้าหมาย (ว่าง = แถวสรุปทั้งระบบ)
   userId       String?
-  user         User?    @relation(fields: [userId], references: [id])
-
   pointsEarned Int      @default(0)
   uptimePct    Float?
   avgBandwidth Float?
   qfScore      Float?
   trustScore   Float?
-
   createdAt    DateTime @default(now())
+  ip           String?
+  /// ✅ สถานะ node ล่าสุดในวันนั้น
+  region       String?
+  version      String?
+  user         User?    @relation(fields: [userId], references: [id])
 
   @@unique([dayUtc, userId], name: "dayUtc_userId_unique")
   @@index([dayUtc])
   @@index([userId])
 }
 
-// =========================
-/*      REFERRAL CODE      */
-// =========================
-
 model ReferralCode {
   /// โค้ดที่ใช้ใน URL เช่น /r/abcd1234
   code      String   @id
-
   /// อ้างอิงถึง userId / wallet เจ้าของโค้ด (ใช้เป็น String ตรง ๆ)
   userId    String
-
-  createdAt DateTime @default(now())
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
 
   @@index([userId])
+}
+
+model SharingState {
+  id        String   @id @default(cuid())
+  /// เก็บ wallet ตรง ๆ แบบ lowercase (จัดการตอนเขียนใน API)
+  wallet    String   @unique
+  /// true = กำลังแชร์ bandwidth, false = หยุดแชร์
+  active    Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
