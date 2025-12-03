@@ -2,209 +2,158 @@
 import { NextResponse } from "next/server";
 import { cookies, headers } from "next/headers";
 import { prisma } from "@/lib/prisma";
-import type { Prisma } from "@prisma/client";
 
-// แต้มต่อ 1 heartbeat และ uptime ดีฟอลต์
-const POINTS_PER_HEARTBEAT = 10; // 1 heartbeat = 10 pts (ตัวอย่าง)
-const DEFAULT_UPTIME_SEC = 60;   // สมมติส่งทุก ๆ 60 วินาที
-
-// ปัดเวลาให้เป็นต้นชั่วโมงแบบ UTC เช่น 2025-12-02T14:00:00Z
-function floorToUtcHour(d: Date): Date {
-  return new Date(
-    Date.UTC(
-      d.getUTCFullYear(),
-      d.getUTCMonth(),
-      d.getUTCDate(),
-      d.getUTCHours(),
-      0,
-      0,
-      0
-    )
-  );
-}
+export const dynamic = "force-dynamic";
 
 /**
  * POST /api/sharing/heartbeat
  *
- * ใช้ให้ client ยิงทุก ๆ 60 วินาที เพื่อ:
- *  - บันทึก PointEvent type="extension_farm"
- *  - อัปเดต MetricsHourly ของ user
- *  - อัปเดต MetricsHourly แถว system (userId = null)
- *
- * body:
- * {
- *   "wallet": string,
- *   "bandwidthMbps"?: number,
- *   "uptimeSec"?: number
- * }
+ * ใช้ยิงจากหน้า Dashboard เมื่อปุ่ม Sharing = Active
+ * ทุกครั้งที่เรียก จะ + แต้มให้ user ที่ผูกกับ wallet ใน cookie
  */
 export async function POST(req: Request) {
   try {
     const cookieStore = cookies();
-    const auth = cookieStore.get("solink_auth")?.value;
-    const walletCookie = cookieStore.get("solink_wallet")?.value;
 
-    // 1) parse body
-    const body = await req.json().catch(() => null);
-
-    const wallet: string | undefined =
-      body?.wallet || walletCookie || undefined;
-    const bandwidthMbps: number | undefined =
-      typeof body?.bandwidthMbps === "number"
-        ? body.bandwidthMbps
-        : undefined;
-    const uptimeSecRaw: number | undefined =
-      typeof body?.uptimeSec === "number" ? body.uptimeSec : undefined;
+    // 1) อ่าน wallet จาก cookie (เซ็ตจากหน้า dashboard ตอน connect)
+    const wallet = cookieStore.get("solink_wallet")?.value;
 
     if (!wallet) {
       return NextResponse.json(
-        { ok: false, error: "Missing wallet in heartbeat payload" },
-        { status: 400 }
-      );
-    }
-
-    if (!auth) {
-      return NextResponse.json(
-        { ok: false, error: "Not authenticated" },
+        {
+          ok: false,
+          error: "Missing wallet cookie (solink_wallet).",
+        },
         { status: 401 }
       );
     }
 
-    // uptime ถ้าไม่ส่งมาก็ใช้ค่าดีฟอลต์
-    const uptimeSec = uptimeSecRaw && uptimeSecRaw > 0 ? uptimeSecRaw : DEFAULT_UPTIME_SEC;
-    const pointsPerHeartbeat = POINTS_PER_HEARTBEAT;
-
-    const now = new Date();
-    const hourUtc = floorToUtcHour(now);
-
-    // หา user จาก wallet
+    // 2) หา user จาก wallet
     const user = await prisma.user.findFirst({
       where: { wallet },
     });
 
     if (!user) {
       return NextResponse.json(
-        { ok: false, error: "User not found" },
+        {
+          ok: false,
+          error: "User not found for this wallet.",
+        },
         { status: 404 }
       );
     }
 
-    // header สำหรับ ip / user agent (เอาไปใช้ตอนหลังได้)
-    const hdrs = headers();
-    const forwardedFor = hdrs.get("x-forwarded-for") || "";
-    const remoteAddr = forwardedFor.split(",")[0]?.trim() || null;
-    const userAgent = hdrs.get("user-agent") || null;
+    // 3) พยายามอ่าน JSON body (bandwidthMbps, uptimeSec) ถ้าอ่านไม่ได้ก็ปล่อยเป็น default
+    let body: any = {};
+    try {
+      body = await req.json();
+    } catch {
+      body = {};
+    }
 
-    const result = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
-      // 1) log ลง PointEvent
-      await tx.pointEvent.create({
+    const bandwidthMbps = Number(body.bandwidthMbps) || 0;
+    const uptimeSec = Number(body.uptimeSec) || 0;
+
+    // 4) คำนวณแต้มที่จะให้ต่อ 1 heartbeat (ตอนนี้ fix ไว้ก่อนให้เห็นผลชัด ๆ)
+    const pointsEarned = 10; // ✅ ให้ 10 แต้ม / heartbeat (ปรับทีหลังได้)
+
+    // 5) หาชั่วโมงปัจจุบันแบบ UTC (ใช้เก็บใน MetricsHourly)
+    const now = new Date();
+    const hourUtc = new Date(
+      Date.UTC(
+        now.getUTCFullYear(),
+        now.getUTCMonth(),
+        now.getUTCDate(),
+        now.getUTCHours()
+      )
+    );
+
+    const userAgent = headers().get("user-agent") || "";
+    const ip =
+      headers().get("x-forwarded-for") ||
+      (headers().get("x-real-ip") as string) ||
+      "unknown";
+
+    // 6) เขียนข้อมูลลงฐานด้วย transaction:
+    //    - PointEvent (ledger)
+    //    - PointBalance (ยอดคงเหลือ)
+    //    - MetricsHourly (per-user)
+    const [event, balance, hourly] = await prisma.$transaction([
+      // 6.1) สร้าง ledger event
+      prisma.pointEvent.create({
         data: {
           userId: user.id,
           type: "extension_farm",
-          amount: pointsPerHeartbeat,
+          amount: pointsEarned,
           meta: {
-            source: "heartbeat",
-            bandwidthMbps: bandwidthMbps ?? null,
+            source: "sharing_heartbeat",
+            bandwidthMbps,
             uptimeSec,
-            ip: remoteAddr,
-            ua: userAgent,
+            ip,
+            userAgent,
           },
         },
-      });
+      }),
 
-      // 2) อัปเดตยอด PointBalance ของ user
-      await tx.pointBalance.upsert({
+      // 6.2) อัปเดตยอดแต้มคงเหลือ
+      prisma.pointBalance.upsert({
         where: { userId: user.id },
-        update: {
-          balance: { increment: pointsPerHeartbeat },
-        },
         create: {
           userId: user.id,
-          balance: pointsPerHeartbeat,
-          slk: 0,
+          balance: pointsEarned,
         },
-      });
+        update: {
+          balance: { increment: pointsEarned },
+        },
+      }),
 
-      // 3) อัปเดต MetricsHourly ของ user
-      await tx.metricsHourly.upsert({
+      // 6.3) อัปเดต MetricsHourly ของ user นี้ (เอาไว้ใช้ใน dashboard user)
+      prisma.metricsHourly.upsert({
         where: {
           hourUtc_userId_unique: {
             hourUtc,
             userId: user.id,
           },
         },
-        update: {
-          pointsEarned: {
-            increment: pointsPerHeartbeat,
-          },
-          uptimePct: 0, // ไว้คิดทีหลังจาก uptimeSec ถ้าต้องการ
-          avgBandwidth: bandwidthMbps ?? undefined,
-          qfScore: 0,
-          trustScore: 0,
-          region: null,
-          ip: remoteAddr,
-          version: null,
-        },
         create: {
           hourUtc,
           userId: user.id,
-          pointsEarned: pointsPerHeartbeat,
-          uptimePct: 0,
-          avgBandwidth: bandwidthMbps ?? null,
-          qfScore: 0,
-          trustScore: 0,
+          pointsEarned: pointsEarned,
+          avgBandwidth: bandwidthMbps || null,
+          uptimePct: null,
+          qfScore: null,
+          trustScore: null,
+          ip,
           region: null,
-          ip: remoteAddr,
           version: null,
-        },
-      });
-
-            // 4) อัปเดต MetricsHourly แถว system (userId = null)
-      await tx.metricsHourly.upsert({
-        where: {
-          hourUtc_userId_unique: {
-            hourUtc,
-            // prisma type บังคับ string แต่เราต้องการค่า null สำหรับ system row
-            userId: null as any,
-          },
         },
         update: {
           pointsEarned: {
-            increment: pointsPerHeartbeat,
+            increment: pointsEarned,
           },
+          avgBandwidth:
+            bandwidthMbps > 0 ? bandwidthMbps : undefined,
+          ip,
         },
-        create: {
-          hourUtc,
-          userId: null,
-          pointsEarned: pointsPerHeartbeat,
-          uptimePct: null,
-          avgBandwidth: null,
-          qfScore: null,
-          trustScore: null,
-          region: null,
-          ip: null,
-          version: null,
-        },
-      });
-
-
-      return {
-        pointsPerHeartbeat,
-        hourUtc,
-      };
-    });
+      }),
+    ]);
 
     return NextResponse.json(
       {
         ok: true,
-        ...result,
+        pointsEarned,
+        totalPoints: balance.balance,
+        eventId: event.id,
       },
       { status: 200 }
     );
   } catch (e: any) {
-    console.error("heartbeat error:", e);
+    console.error("sharing heartbeat error:", e);
     return NextResponse.json(
-      { ok: false, error: e?.message || "Internal server error" },
+      {
+        ok: false,
+        error: e?.message || "Internal server error",
+      },
       { status: 500 }
     );
   }
