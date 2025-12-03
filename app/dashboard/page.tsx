@@ -621,12 +621,14 @@ function DashboardInner() {
     };
   }, [connected, address]);
 
-  // -------- Sharing: toggle handler (/api/sharing/toggle) --------
+    // -------- Sharing: toggle handler (/api/sharing/toggle) --------
   const handleToggleSharing = async () => {
     if (!connected || !address) {
       setSharingError("Please connect your wallet first.");
       return;
     }
+
+    const next = !sharingActive; // สถานะใหม่ที่ต้องการสลับเป็น
 
     try {
       setSharingLoading(true);
@@ -636,11 +638,17 @@ function DashboardInner() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         cache: "no-store",
+        credentials: "include",
+        body: JSON.stringify({
+          address,
+          active: next,
+        }),
       });
 
-      const json = await res.json();
-      if (!res.ok || !json.ok) {
-        throw new Error(json?.error || "Failed to toggle sharing");
+      const json = await res.json().catch(() => null);
+
+      if (!res.ok || !json?.ok) {
+        throw new Error(json?.error || `HTTP ${res.status} while toggling sharing`);
       }
 
       setSharingActive(!!json.active);
@@ -651,6 +659,7 @@ function DashboardInner() {
       setSharingLoading(false);
     }
   };
+
 
   // -------- Convert handler (เรียก API /api/points/convert) --------
   const handleConvert = async () => {
