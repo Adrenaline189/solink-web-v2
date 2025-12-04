@@ -8,8 +8,14 @@ const DEFAULT_GOAL_HOURS = 8;
 // ต้องตรงกับค่าที่ใช้ใน /api/sharing/heartbeat
 const HEARTBEAT_UPTIME_SEC = 60;
 
+// helper
 function truncateToDayUtc(d: Date): Date {
   return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 0, 0, 0, 0));
+}
+
+function clamp01(x: number): number {
+  if (Number.isNaN(x)) return 0;
+  return Math.min(1, Math.max(0, x));
 }
 
 export async function GET(req: Request) {
@@ -22,22 +28,23 @@ export async function GET(req: Request) {
     const cookieStore = cookies();
     const wallet = cookieStore.get("solink_wallet")?.value ?? null;
 
-    // ยังไม่ได้ login ด้วย wallet → ส่ง summary ว่าง ๆ
-    if (!wallet) {
-      const empty = {
-        pointsToday: 0,
-        totalPoints: 0,
-        slk: 0,
-        uptimeHours: 0,
-        goalHours: DEFAULT_GOAL_HOURS,
-        avgBandwidthMbps: 0,
-        qf: 0,
-        trust: 0,
-        region: null as string | null,
-        ip: null as string | null,
-        version: null as string | null,
-      };
+    const makeEmpty = () => ({
+      pointsToday: 0,
+      totalPoints: 0,
+      slk: 0,
+      uptimeHours: 0,
+      goalHours: DEFAULT_GOAL_HOURS,
+      avgBandwidthMbps: 0,
+      qf: 0,
+      trust: 0,
+      region: null as string | null,
+      ip: null as string | null,
+      version: null as string | null,
+    });
 
+    // ยังไม่ได้ login ด้วย wallet
+    if (!wallet) {
+      const empty = makeEmpty();
       return NextResponse.json(
         {
           ok: true,
@@ -55,20 +62,7 @@ export async function GET(req: Request) {
     });
 
     if (!user) {
-      const empty = {
-        pointsToday: 0,
-        totalPoints: 0,
-        slk: 0,
-        uptimeHours: 0,
-        goalHours: DEFAULT_GOAL_HOURS,
-        avgBandwidthMbps: 0,
-        qf: 0,
-        trust: 0,
-        region: null as string | null,
-        ip: null as string | null,
-        version: null as string | null,
-      };
-
+      const empty = makeEmpty();
       return NextResponse.json(
         {
           ok: true,
@@ -84,12 +78,7 @@ export async function GET(req: Request) {
     const todayUtc = truncateToDayUtc(now);
     const tomorrowUtc = new Date(todayUtc.getTime() + 24 * 60 * 60 * 1000);
 
-    // ----------------------------------------------------
-    // ดึงข้อมูลหลักสำหรับ summary:
-    //  - PointEvent วันนี้ของ user
-    //  - PointBalance ตอนนี้
-    //  - MetricsHourly แถวล่าสุดเอา region/ip/version
-    // ----------------------------------------------------
+    // ดึงข้อมูลหลักสำหรับ summary
     const [eventsToday, balance, latestHourly] = await Promise.all([
       prisma.pointEvent.findMany({
         where: {
@@ -109,20 +98,19 @@ export async function GET(req: Request) {
       }),
     ]);
 
-    // 1) คะแนนวันนี้จาก PointEvent (ทุก type รวมกัน)
+    // 1) คะแนนวันนี้
     const pointsToday = eventsToday.reduce((sum, e) => sum + e.amount, 0);
 
-    // 2) ยอดสะสม / SLK จาก PointBalance
+    // 2) ยอดสะสม / SLK
     const totalPoints = balance?.balance ?? 0;
     const slk = balance?.slk ?? 0;
 
-    // 3) Uptime วันนี้ (ชั่วโมง) — คิดจากจำนวน heartbeat วันนี้
-    //    โดยสมมติว่า heartbeat หนึ่งครั้งแทน 60 วินาที
+    // 3) Uptime วันนี้ (ชั่วโมง)
     const heartbeatCount = eventsToday.filter((e) => e.type === "extension_farm").length;
     const uptimeSecTotal = heartbeatCount * HEARTBEAT_UPTIME_SEC;
     const uptimeHours = Math.round(uptimeSecTotal / 3600);
 
-    // 4) Average Bandwidth (Mbps) — เฉลี่ยจาก meta.bandwidthMbps ของ event วันนี้
+    // 4) Average Bandwidth (Mbps)
     let avgBandwidthMbps = 0;
     const bandwidthSamples: number[] = [];
 
@@ -135,14 +123,34 @@ export async function GET(req: Request) {
 
     if (bandwidthSamples.length > 0) {
       const sum = bandwidthSamples.reduce((s, v) => s + v, 0);
-      avgBandwidthMbps = Math.round((sum / bandwidthSamples.length) * 10) / 10; // ปัดทศนิยม 1 ตำแหน่ง
+      avgBandwidthMbps = Math.round((sum / bandwidthSamples.length) * 10) / 10;
     }
 
-    // 5) QF / Trust ตอนนี้ยังไม่มีสูตร → ให้ 0 ไปก่อน
-    const qf = 0;
-    const trust = 0;
+    // 5) คำนวณ Quality Factor จาก uptime+bandwidth ของวันนี้
+    const goalHours = DEFAULT_GOAL_HOURS;
+    const uptimePctToday = goalHours > 0 ? (uptimeHours / goalHours) * 100 : 0;
 
-    // 6) Region / IP / Version ดึงจาก metricsHourly แถวล่าสุด
+    // uptime 70 คะแนน (เต็มที่ 80%)
+    const uptimeScoreQF = clamp01(uptimePctToday / 80) * 70;
+    // bandwidth 30 คะแนน (10–100 Mbps)
+    const bwScoreQF = clamp01((avgBandwidthMbps - 10) / (100 - 10)) * 30;
+
+    const qf = Math.round(uptimeScoreQF + bwScoreQF);
+
+    // 6) คำนวณ Trust Score แบบง่าย ๆ
+    // uptime วันนี้ 60 คะแนน (เต็มที่ 95%)
+    const uptimeScoreTrust = clamp01(uptimePctToday / 95) * 60;
+    // ความ active จากแต้มวันนี้ (>= 500 แต้ม = เต็ม 30)
+    const activityScore = clamp01(pointsToday / 500) * 30;
+    // อายุบัญชี (30 วัน = เต็ม 10)
+    const accountAgeDays = Math.floor(
+      (now.getTime() - user.createdAt.getTime()) / (1000 * 60 * 60 * 24)
+    );
+    const ageScore = clamp01(accountAgeDays / 30) * 10;
+
+    const trust = Math.round(uptimeScoreTrust + activityScore + ageScore);
+
+    // 7) Region / IP / Version
     const region = latestHourly?.region ?? null;
     const ip = latestHourly?.ip ?? null;
     const version = latestHourly?.version ?? null;
@@ -152,7 +160,7 @@ export async function GET(req: Request) {
       totalPoints,
       slk,
       uptimeHours,
-      goalHours: DEFAULT_GOAL_HOURS,
+      goalHours,
       avgBandwidthMbps,
       qf,
       trust,
@@ -166,7 +174,7 @@ export async function GET(req: Request) {
         ok: true,
         range,
         summary,
-        ...summary, // เผื่อ client รุ่นเก่า
+        ...summary,
       },
       { status: 200 }
     );
