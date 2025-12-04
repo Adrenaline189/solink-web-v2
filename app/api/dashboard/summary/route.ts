@@ -4,11 +4,9 @@ import { cookies } from "next/headers";
 import { prisma } from "@/lib/prisma";
 import type { DashboardRange } from "@/types/dashboard";
 
-/**
- * GET /api/dashboard/summary?range=today|7d|30d
- */
-
 const DEFAULT_GOAL_HOURS = 8;
+// ต้องตรงกับค่าที่ใช้ใน /api/sharing/heartbeat
+const HEARTBEAT_UPTIME_SEC = 60;
 
 function truncateToDayUtc(d: Date): Date {
   return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 0, 0, 0, 0));
@@ -24,7 +22,7 @@ export async function GET(req: Request) {
     const cookieStore = cookies();
     const wallet = cookieStore.get("solink_wallet")?.value ?? null;
 
-    // ยังไม่ login → ส่ง summary ว่าง ๆ
+    // ยังไม่ได้ login ด้วย wallet → ส่ง summary ว่าง ๆ
     if (!wallet) {
       const empty = {
         pointsToday: 0,
@@ -86,28 +84,14 @@ export async function GET(req: Request) {
     const todayUtc = truncateToDayUtc(now);
     const tomorrowUtc = new Date(todayUtc.getTime() + 24 * 60 * 60 * 1000);
 
-    // ใช้ Promise.all ให้เร็ว
-    const [todayMetrics, balance, latestHourly, todayEventsAgg] = await Promise.all([
-      // MetricsDaily วันนี้ของ user (อาจยังไม่มี)
-      prisma.metricsDaily.findUnique({
-        where: {
-          dayUtc_userId_unique: {
-            dayUtc: todayUtc,
-            userId: user.id,
-          },
-        },
-      }),
-      // PointBalance ปัจจุบัน
-      prisma.pointBalance.findUnique({
-        where: { userId: user.id },
-      }),
-      // ใช้ MetricsHourly แถวล่าสุดของ user (เอา region / ip / version)
-      prisma.metricsHourly.findFirst({
-        where: { userId: user.id },
-        orderBy: { hourUtc: "desc" },
-      }),
-      // fallback: นับแต้มวันนี้จาก PointEvent โดยตรง
-      prisma.pointEvent.aggregate({
+    // ----------------------------------------------------
+    // ดึงข้อมูลหลักสำหรับ summary:
+    //  - PointEvent วันนี้ของ user
+    //  - PointBalance ตอนนี้
+    //  - MetricsHourly แถวล่าสุดเอา region/ip/version
+    // ----------------------------------------------------
+    const [eventsToday, balance, latestHourly] = await Promise.all([
+      prisma.pointEvent.findMany({
         where: {
           userId: user.id,
           createdAt: {
@@ -115,40 +99,53 @@ export async function GET(req: Request) {
             lt: tomorrowUtc,
           },
         },
-        _sum: { amount: true },
+      }),
+      prisma.pointBalance.findUnique({
+        where: { userId: user.id },
+      }),
+      prisma.metricsHourly.findFirst({
+        where: { userId: user.id },
+        orderBy: { hourUtc: "desc" },
       }),
     ]);
 
-    // ==== แต้ม & SLK ====
-    const pointsTodayFromDaily =
-      typeof todayMetrics?.pointsEarned === "number"
-        ? todayMetrics.pointsEarned
-        : null;
+    // 1) คะแนนวันนี้จาก PointEvent (ทุก type รวมกัน)
+    const pointsToday = eventsToday.reduce((sum, e) => sum + e.amount, 0);
 
-    const pointsTodayFromEvents = todayEventsAgg._sum.amount ?? 0;
-
-    // ถ้ามี MetricsDaily ใช้ค่านั้นก่อน ถ้าไม่มีค่อย fallback ไปใช้ aggregate จาก PointEvent
-    const pointsToday =
-      pointsTodayFromDaily != null ? pointsTodayFromDaily : pointsTodayFromEvents;
-
+    // 2) ยอดสะสม / SLK จาก PointBalance
     const totalPoints = balance?.balance ?? 0;
     const slk = balance?.slk ?? 0;
 
-    // ==== Uptime ====
-    const uptimePct = todayMetrics?.uptimePct ?? null;
-    const uptimeHours =
-      uptimePct != null && Number.isFinite(uptimePct)
-        ? Math.round((uptimePct / 100) * 24)
-        : 0;
+    // 3) Uptime วันนี้ (ชั่วโมง) — คิดจากจำนวน heartbeat วันนี้
+    //    โดยสมมติว่า heartbeat หนึ่งครั้งแทน 60 วินาที
+    const heartbeatCount = eventsToday.filter((e) => e.type === "extension_farm").length;
+    const uptimeSecTotal = heartbeatCount * HEARTBEAT_UPTIME_SEC;
+    const uptimeHours = Math.round(uptimeSecTotal / 3600);
 
-    // ==== bandwidth / scores ====
-    const avgBandwidthMbps = todayMetrics?.avgBandwidth ?? 0;
-    const qf = todayMetrics?.qfScore ?? 0;
-    const trust = todayMetrics?.trustScore ?? 0;
+    // 4) Average Bandwidth (Mbps) — เฉลี่ยจาก meta.bandwidthMbps ของ event วันนี้
+    let avgBandwidthMbps = 0;
+    const bandwidthSamples: number[] = [];
 
-    const region = latestHourly?.region ?? todayMetrics?.region ?? null;
-    const ip = latestHourly?.ip ?? todayMetrics?.ip ?? null;
-    const version = latestHourly?.version ?? todayMetrics?.version ?? null;
+    for (const ev of eventsToday) {
+      const meta: any = ev.meta as any;
+      if (meta && typeof meta.bandwidthMbps === "number" && meta.bandwidthMbps > 0) {
+        bandwidthSamples.push(meta.bandwidthMbps);
+      }
+    }
+
+    if (bandwidthSamples.length > 0) {
+      const sum = bandwidthSamples.reduce((s, v) => s + v, 0);
+      avgBandwidthMbps = Math.round((sum / bandwidthSamples.length) * 10) / 10; // ปัดทศนิยม 1 ตำแหน่ง
+    }
+
+    // 5) QF / Trust ตอนนี้ยังไม่มีสูตร → ให้ 0 ไปก่อน
+    const qf = 0;
+    const trust = 0;
+
+    // 6) Region / IP / Version ดึงจาก metricsHourly แถวล่าสุด
+    const region = latestHourly?.region ?? null;
+    const ip = latestHourly?.ip ?? null;
+    const version = latestHourly?.version ?? null;
 
     const summary = {
       pointsToday,
@@ -169,8 +166,7 @@ export async function GET(req: Request) {
         ok: true,
         range,
         summary,
-        // duplicate fields เผื่อ client รุ่นเก่า
-        ...summary,
+        ...summary, // เผื่อ client รุ่นเก่า
       },
       { status: 200 }
     );
