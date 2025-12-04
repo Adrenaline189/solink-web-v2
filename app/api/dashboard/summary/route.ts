@@ -6,20 +6,6 @@ import type { DashboardRange } from "@/types/dashboard";
 
 /**
  * GET /api/dashboard/summary?range=today|7d|30d
- *
- * ใช้เป็น source หลักของ KPI บน Dashboard:
- *  - Points Today
- *  - Total Points
- *  - SLK (off-chain)
- *  - Uptime Today (ชั่วโมง)
- *  - Goal Hours (ตั้งค่าตายตัว 8 ชม. ตอนนี้)
- *  - Avg Bandwidth (Mbps)
- *  - QF Score / Trust Score
- *  - Region / IP / Version ล่าสุดของ node
- *
- * ฝั่ง client ใช้ helper fetchDashboardSummaryClient() ซึ่งรองรับทั้ง:
- *  - { ok: true, summary: {...} }
- *  - หรือ { pointsToday, totalPoints, ... } ตรง ๆ
  */
 
 const DEFAULT_GOAL_HOURS = 8;
@@ -32,12 +18,13 @@ export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
     const rangeParam = searchParams.get("range") as DashboardRange | null;
-    const range: DashboardRange = rangeParam === "7d" || rangeParam === "30d" ? rangeParam : "today";
+    const range: DashboardRange =
+      rangeParam === "7d" || rangeParam === "30d" ? rangeParam : "today";
 
     const cookieStore = cookies();
     const wallet = cookieStore.get("solink_wallet")?.value ?? null;
 
-    // ถ้ายังไม่ login ด้วย wallet → ส่ง summary ว่าง ๆ กลับไป
+    // ยังไม่ login → ส่ง summary ว่าง ๆ
     if (!wallet) {
       const empty = {
         pointsToday: 0,
@@ -56,6 +43,7 @@ export async function GET(req: Request) {
       return NextResponse.json(
         {
           ok: true,
+          range,
           summary: empty,
           ...empty,
         },
@@ -86,6 +74,7 @@ export async function GET(req: Request) {
       return NextResponse.json(
         {
           ok: true,
+          range,
           summary: empty,
           ...empty,
         },
@@ -95,10 +84,11 @@ export async function GET(req: Request) {
 
     const now = new Date();
     const todayUtc = truncateToDayUtc(now);
+    const tomorrowUtc = new Date(todayUtc.getTime() + 24 * 60 * 60 * 1000);
 
-    // ใช้ Promise.all ให้เร็วที่สุด
-    const [todayMetrics, balance, latestHourly] = await Promise.all([
-      // MetricsDaily วันนี้ของ user
+    // ใช้ Promise.all ให้เร็ว
+    const [todayMetrics, balance, latestHourly, todayEventsAgg] = await Promise.all([
+      // MetricsDaily วันนี้ของ user (อาจยังไม่มี)
       prisma.metricsDaily.findUnique({
         where: {
           dayUtc_userId_unique: {
@@ -116,17 +106,42 @@ export async function GET(req: Request) {
         where: { userId: user.id },
         orderBy: { hourUtc: "desc" },
       }),
+      // fallback: นับแต้มวันนี้จาก PointEvent โดยตรง
+      prisma.pointEvent.aggregate({
+        where: {
+          userId: user.id,
+          createdAt: {
+            gte: todayUtc,
+            lt: tomorrowUtc,
+          },
+        },
+        _sum: { amount: true },
+      }),
     ]);
 
-    const pointsToday = todayMetrics?.pointsEarned ?? 0;
+    // ==== แต้ม & SLK ====
+    const pointsTodayFromDaily =
+      typeof todayMetrics?.pointsEarned === "number"
+        ? todayMetrics.pointsEarned
+        : null;
+
+    const pointsTodayFromEvents = todayEventsAgg._sum.amount ?? 0;
+
+    // ถ้ามี MetricsDaily ใช้ค่านั้นก่อน ถ้าไม่มีค่อย fallback ไปใช้ aggregate จาก PointEvent
+    const pointsToday =
+      pointsTodayFromDaily != null ? pointsTodayFromDaily : pointsTodayFromEvents;
+
     const totalPoints = balance?.balance ?? 0;
     const slk = balance?.slk ?? 0;
 
-    // แปล uptimePct → uptimeHours แบบคร่าว ๆ (จาก daily row วันนี้)
+    // ==== Uptime ====
     const uptimePct = todayMetrics?.uptimePct ?? null;
     const uptimeHours =
-      uptimePct != null && Number.isFinite(uptimePct) ? Math.round((uptimePct / 100) * 24) : 0;
+      uptimePct != null && Number.isFinite(uptimePct)
+        ? Math.round((uptimePct / 100) * 24)
+        : 0;
 
+    // ==== bandwidth / scores ====
     const avgBandwidthMbps = todayMetrics?.avgBandwidth ?? 0;
     const qf = todayMetrics?.qfScore ?? 0;
     const trust = todayMetrics?.trustScore ?? 0;
