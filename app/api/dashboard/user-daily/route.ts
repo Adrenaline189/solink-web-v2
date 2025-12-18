@@ -1,7 +1,8 @@
 // app/api/dashboard/user-daily/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
-import { prisma } from "@/server/db";
+import { prisma } from "@/lib/prisma";
+
 
 type Range = "today" | "7d" | "30d";
 

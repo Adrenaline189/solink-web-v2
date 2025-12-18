@@ -30,7 +30,7 @@
     "inspect:metrics": "tsx scripts/inspect-metrics.ts",
     "studio": "prisma studio",
     "prepare": "husky",
-    "rollup:daily": "tsx scripts/rollup-daily.ts" ,
+    "rollup:daily": "tsx scripts/rollup-daily.ts",
     "rollup:worker": "tsx scripts/rollup-worker.ts",
     "farm:test": "tsx scripts/farm-test.ts"
   },
@@ -61,6 +61,7 @@
     "react-dom": "18.2.0",
     "recharts": "^2.15.4",
     "tweetnacl": "^1.0.3",
+    "tweetnacl-util": "^0.15.1",
     "viem": "^2.37.2",
     "wagmi": "^2.16.9"
   },

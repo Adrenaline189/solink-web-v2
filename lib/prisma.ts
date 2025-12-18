@@ -1,14 +1,15 @@
+// lib/prisma.ts
 import { PrismaClient } from "@prisma/client";
 
-const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };
+declare global {
+  // eslint-disable-next-line no-var
+  var prisma: PrismaClient | undefined;
+}
 
 export const prisma =
-  globalForPrisma.prisma ?? new PrismaClient({ log: ["warn", "error"] });
+  global.prisma ??
+  new PrismaClient({
+    log: process.env.NODE_ENV === "development" ? ["warn", "error"] : ["error"],
+  });
 
-if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = prisma;
-
-if (!process.env.DATABASE_URL) {
-  console.error("❌ DATABASE_URL missing");
-} else {
-  console.log("✅ DATABASE_URL loaded:", process.env.DATABASE_URL.split("@")[1]?.slice(0, 30) + "…");
-}
+if (process.env.NODE_ENV !== "production") global.prisma = prisma;

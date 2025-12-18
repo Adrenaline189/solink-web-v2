@@ -1,12 +1,9 @@
-// app/api/dashboard/summary/route.ts
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { prisma } from "@/lib/prisma";
 import type { DashboardRange } from "@/types/dashboard";
 
 const DEFAULT_GOAL_HOURS = 8;
-// ต้องตรงกับค่าที่ใช้ใน /api/sharing/heartbeat
-const HEARTBEAT_UPTIME_SEC = 60;
 
 // helper
 function truncateToDayUtc(d: Date): Date {
@@ -38,121 +35,111 @@ export async function GET(req: Request) {
       qf: 0,
       trust: 0,
       region: null as string | null,
-      ip: null as string | null,
+      ip: null as string | null, // schema ไม่มี ip ใน MetricsHourly ตอนนี้ → คืน null เสมอ
       version: null as string | null,
     });
 
     // ยังไม่ได้ login ด้วย wallet
     if (!wallet) {
       const empty = makeEmpty();
-      return NextResponse.json(
-        {
-          ok: true,
-          range,
-          summary: empty,
-          ...empty,
-        },
-        { status: 200 }
-      );
+      return NextResponse.json({ ok: true, range, summary: empty, ...empty }, { status: 200 });
     }
 
     // หา user จาก wallet
-    const user = await prisma.user.findFirst({
-      where: { wallet },
-    });
+    const user = await prisma.user.findFirst({ where: { wallet } });
 
     if (!user) {
       const empty = makeEmpty();
-      return NextResponse.json(
-        {
-          ok: true,
-          range,
-          summary: empty,
-          ...empty,
-        },
-        { status: 200 }
-      );
+      return NextResponse.json({ ok: true, range, summary: empty, ...empty }, { status: 200 });
     }
 
     const now = new Date();
     const todayUtc = truncateToDayUtc(now);
     const tomorrowUtc = new Date(todayUtc.getTime() + 24 * 60 * 60 * 1000);
 
-    // ดึงข้อมูลหลักสำหรับ summary
-    const [eventsToday, balance, latestHourly] = await Promise.all([
-      prisma.pointEvent.findMany({
+    // ดึงข้อมูลจาก metrics เป็นหลัก
+    const [dailyToday, balance, latestHourly] = await Promise.all([
+      prisma.metricsDaily.findUnique({
         where: {
-          userId: user.id,
-          createdAt: {
-            gte: todayUtc,
-            lt: tomorrowUtc,
-          },
+          dayUtc_userId_unique: { dayUtc: todayUtc, userId: user.id },
         },
       }),
-      prisma.pointBalance.findUnique({
-        where: { userId: user.id },
-      }),
+      prisma.pointBalance.findUnique({ where: { userId: user.id } }),
       prisma.metricsHourly.findFirst({
         where: { userId: user.id },
         orderBy: { hourUtc: "desc" },
       }),
     ]);
 
-    // 1) คะแนนวันนี้
-    const pointsToday = eventsToday.reduce((sum, e) => sum + e.amount, 0);
+    const goalHours = DEFAULT_GOAL_HOURS;
 
-    // 2) ยอดสะสม / SLK
+    // 1) คะแนนวันนี้: ใช้ MetricsDaily ก่อน (fallback: sum PointEvent ของวันนั้น)
+    let pointsToday = dailyToday?.pointsEarned ?? 0;
+
+    if (!dailyToday) {
+      const sumEvents = await prisma.pointEvent.aggregate({
+        where: {
+          userId: user.id,
+          occurredAt: { gte: todayUtc, lt: tomorrowUtc }, // ใช้ occurredAt ให้ตรงระบบใหม่
+        },
+        _sum: { amount: true },
+      });
+      pointsToday = sumEvents._sum.amount ?? 0;
+    }
+
+    // 2) ยอดสะสม / SLK (real-time)
     const totalPoints = balance?.balance ?? 0;
     const slk = balance?.slk ?? 0;
 
     // 3) Uptime วันนี้ (ชั่วโมง)
-    const heartbeatCount = eventsToday.filter((e) => e.type === "extension_farm").length;
-    const uptimeSecTotal = heartbeatCount * HEARTBEAT_UPTIME_SEC;
-    const uptimeHours = Math.round(uptimeSecTotal / 3600);
+    // - ถ้า MetricsDaily.uptimePct มี → คิดชั่วโมงจาก goalHours
+    // - ไม่งั้น fallback: นับ event UPTIME_MINUTE ของวันนี้ (occurredAt)
+    let uptimeHours = 0;
 
-    // 4) Average Bandwidth (Mbps)
-    let avgBandwidthMbps = 0;
-    const bandwidthSamples: number[] = [];
-
-    for (const ev of eventsToday) {
-      const meta: any = ev.meta as any;
-      if (meta && typeof meta.bandwidthMbps === "number" && meta.bandwidthMbps > 0) {
-        bandwidthSamples.push(meta.bandwidthMbps);
-      }
+    if (dailyToday?.uptimePct != null && goalHours > 0) {
+      uptimeHours = Math.round((dailyToday.uptimePct / 100) * goalHours);
+    } else {
+      const uptimeCount = await prisma.pointEvent.count({
+        where: {
+          userId: user.id,
+          type: "UPTIME_MINUTE",
+          occurredAt: { gte: todayUtc, lt: tomorrowUtc },
+        },
+      });
+      // 1 นาทีต่อ event → ชั่วโมง
+      uptimeHours = Math.round(uptimeCount / 60);
     }
 
-    if (bandwidthSamples.length > 0) {
-      const sum = bandwidthSamples.reduce((s, v) => s + v, 0);
-      avgBandwidthMbps = Math.round((sum / bandwidthSamples.length) * 10) / 10;
+    // 4) Average Bandwidth (Mbps): ใช้ MetricsDaily ก่อน (ถ้าไม่มีให้เป็น 0)
+    const avgBandwidthMbps =
+      dailyToday?.avgBandwidth != null ? Math.round(dailyToday.avgBandwidth * 10) / 10 : 0;
+
+    // 5) QF / Trust: ใช้ MetricsDaily ก่อน (ถ้าไม่มีค่อยคำนวณแบบง่าย)
+    let qf = dailyToday?.qfScore != null ? Math.round(dailyToday.qfScore) : 0;
+    let trust = dailyToday?.trustScore != null ? Math.round(dailyToday.trustScore) : 0;
+
+    if (dailyToday?.qfScore == null || dailyToday?.trustScore == null) {
+      const uptimePctToday = goalHours > 0 ? (uptimeHours / goalHours) * 100 : 0;
+
+      // QF: uptime 70 (เต็มที่ 80%), bandwidth 30 (10–100 Mbps)
+      const uptimeScoreQF = clamp01(uptimePctToday / 80) * 70;
+      const bwScoreQF = clamp01((avgBandwidthMbps - 10) / (100 - 10)) * 30;
+      qf = Math.round(uptimeScoreQF + bwScoreQF);
+
+      // Trust: uptime 60 (เต็มที่ 95%), activity 30 (>=500 แต้ม), age 10 (30 วัน)
+      const uptimeScoreTrust = clamp01(uptimePctToday / 95) * 60;
+      const activityScore = clamp01(pointsToday / 500) * 30;
+
+      const accountAgeDays = Math.floor(
+        (now.getTime() - user.createdAt.getTime()) / (1000 * 60 * 60 * 24)
+      );
+      const ageScore = clamp01(accountAgeDays / 30) * 10;
+
+      trust = Math.round(uptimeScoreTrust + activityScore + ageScore);
     }
 
-    // 5) คำนวณ Quality Factor จาก uptime+bandwidth ของวันนี้
-    const goalHours = DEFAULT_GOAL_HOURS;
-    const uptimePctToday = goalHours > 0 ? (uptimeHours / goalHours) * 100 : 0;
-
-    // uptime 70 คะแนน (เต็มที่ 80%)
-    const uptimeScoreQF = clamp01(uptimePctToday / 80) * 70;
-    // bandwidth 30 คะแนน (10–100 Mbps)
-    const bwScoreQF = clamp01((avgBandwidthMbps - 10) / (100 - 10)) * 30;
-
-    const qf = Math.round(uptimeScoreQF + bwScoreQF);
-
-    // 6) คำนวณ Trust Score แบบง่าย ๆ
-    // uptime วันนี้ 60 คะแนน (เต็มที่ 95%)
-    const uptimeScoreTrust = clamp01(uptimePctToday / 95) * 60;
-    // ความ active จากแต้มวันนี้ (>= 500 แต้ม = เต็ม 30)
-    const activityScore = clamp01(pointsToday / 500) * 30;
-    // อายุบัญชี (30 วัน = เต็ม 10)
-    const accountAgeDays = Math.floor(
-      (now.getTime() - user.createdAt.getTime()) / (1000 * 60 * 60 * 24)
-    );
-    const ageScore = clamp01(accountAgeDays / 30) * 10;
-
-    const trust = Math.round(uptimeScoreTrust + activityScore + ageScore);
-
-    // 7) Region / IP / Version
+    // 6) Region / Version (จาก hourly ล่าสุด)
     const region = latestHourly?.region ?? null;
-    const ip = latestHourly?.ip ?? null;
     const version = latestHourly?.version ?? null;
 
     const summary = {
@@ -165,27 +152,13 @@ export async function GET(req: Request) {
       qf,
       trust,
       region,
-      ip,
+      ip: null as string | null, // schema ไม่มี field ip ตอนนี้
       version,
     };
 
-    return NextResponse.json(
-      {
-        ok: true,
-        range,
-        summary,
-        ...summary,
-      },
-      { status: 200 }
-    );
+    return NextResponse.json({ ok: true, range, summary, ...summary }, { status: 200 });
   } catch (e: any) {
     console.error("/api/dashboard/summary error:", e);
-    return NextResponse.json(
-      {
-        ok: false,
-        error: e?.message || "Internal server error",
-      },
-      { status: 500 }
-    );
+    return NextResponse.json({ ok: false, error: e?.message || "Internal server error" }, { status: 500 });
   }
 }

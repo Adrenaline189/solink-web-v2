@@ -3,12 +3,6 @@ import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { prisma } from "@/lib/prisma";
 
-/**
- * POST /api/sharing/toggle
- * body: { address: string; active: boolean }
- *
- * ใช้เปิด/ปิดสถานะ sharing ของ wallet ปัจจุบัน
- */
 export async function POST(req: Request) {
   try {
     const cookieStore = cookies();
@@ -21,66 +15,46 @@ export async function POST(req: Request) {
       );
     }
 
-    // ---- อ่าน JSON body แบบปลอดภัย ----
-    let payload: any = null;
+    const wallet = cookieStore.get("solink_wallet")?.value?.trim();
+    if (!wallet) {
+      return NextResponse.json({ ok: false, error: "No wallet" }, { status: 400 });
+    }
+
+    // body optional: { active: boolean }
+    let body: any = {};
     try {
-      payload = await req.json();
-    } catch {
-      payload = null;
-    }
+      body = await req.json();
+    } catch {}
 
-    const address: string | undefined =
-      payload?.address ?? payload?.wallet ?? undefined;
-    const active: boolean | undefined =
-      typeof payload?.active === "boolean"
-        ? payload.active
-        : payload?.active === "true"
-        ? true
-        : payload?.active === "false"
-        ? false
-        : undefined;
+    const forcedActive =
+      typeof body?.active === "boolean" ? body.active : undefined;
 
-    if (!address) {
-      return NextResponse.json(
-        { ok: false, error: "Missing wallet address" },
-        { status: 400 }
-      );
-    }
-
-    if (typeof active === "undefined") {
-      return NextResponse.json(
-        { ok: false, error: "Missing active flag" },
-        { status: 400 }
-      );
-    }
-
-    // upsert ตาม wallet
-    const sharing = await prisma.sharingState.upsert({
-      where: { wallet: address },
-      update: {
-        active,
-        updatedAt: new Date(),
-      },
-      create: {
-        wallet: address,
-        active,
-      },
+    // ensure user exists (optional แต่ดี)
+    await prisma.user.upsert({
+      where: { wallet },
+      update: {},
+      create: { wallet },
     });
 
-    return NextResponse.json(
-      {
-        ok: true,
-        active: sharing.active,
-      },
-      { status: 200 }
-    );
+    const existing = await prisma.sharingState.findUnique({
+      where: { wallet },
+      select: { active: true },
+    });
+
+    const current = !!existing?.active;
+    const next = forcedActive ?? !current;
+
+    await prisma.sharingState.upsert({
+      where: { wallet },
+      update: { active: next },
+      create: { wallet, active: next },
+    });
+
+    return NextResponse.json({ ok: true, active: next }, { status: 200 });
   } catch (e: any) {
-    console.error("sharing toggle error:", e);
+    console.error("[sharing/toggle] error:", e);
     return NextResponse.json(
-      {
-        ok: false,
-        error: e?.message || "Internal server error",
-      },
+      { ok: false, error: e?.message || "Internal server error" },
       { status: 500 }
     );
   }

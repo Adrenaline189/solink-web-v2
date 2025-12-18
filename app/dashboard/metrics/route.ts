@@ -1,6 +1,7 @@
 // app/api/dashboard/metrics/route.ts
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/server/db";
+import { prisma } from "@/lib/prisma";
+
 
 export const runtime = "nodejs";
 

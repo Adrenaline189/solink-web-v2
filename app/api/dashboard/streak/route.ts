@@ -1,7 +1,8 @@
 // app/api/dashboard/streak/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
-import { prisma } from "@/server/db";
+import { prisma } from "@/lib/prisma";
+
 
 function bad(msg: string, status = 400) {
   return NextResponse.json({ ok: false, error: msg }, { status });

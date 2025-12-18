@@ -1,4 +1,3 @@
-// app/api/sharing/heartbeat/route.ts
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { prisma } from "@/lib/prisma";
@@ -63,10 +62,7 @@ export async function POST(req: Request) {
 
     if (!auth || !wallet) {
       return NextResponse.json(
-        {
-          ok: false,
-          error: "Not authenticated",
-        },
+        { ok: false, error: "Not authenticated" },
         { status: 401 }
       );
     }
@@ -104,6 +100,11 @@ export async function POST(req: Request) {
     const dayUtc = floorToUtcDay(now);
     const pointsPerHeartbeat = POINTS_PER_HEARTBEAT;
 
+    // ===== สำคัญ: dedupeKey ต่อ 1 user ต่อ 1 นาที =====
+    const minuteUtc = new Date(now);
+    minuteUtc.setUTCSeconds(0, 0);
+    const dedupeKey = `sharing-heartbeat:${user.id}:${minuteUtc.toISOString()}`;
+
     const result = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       // 1) log ลง PointEvent (ledger)
       const event = await tx.pointEvent.create({
@@ -111,6 +112,13 @@ export async function POST(req: Request) {
           userId: user.id,
           type: "extension_farm",
           amount: pointsPerHeartbeat,
+
+          // ✅ required fields ตาม schema
+          source: "sharing",
+          ruleVersion: "v1",
+          dedupeKey,
+          occurredAt: now,
+
           meta: {
             source: "heartbeat",
             uptimeSec,
@@ -142,7 +150,6 @@ export async function POST(req: Request) {
         },
         update: {
           pointsEarned: { increment: pointsPerHeartbeat },
-          // เก็บ bandwidth ล่าสุดคร่าว ๆ ไว้ดู ไม่ต้องซีเรียส
           avgBandwidth: bandwidthMbps || undefined,
         },
         create: {
@@ -154,7 +161,6 @@ export async function POST(req: Request) {
           qfScore: null,
           trustScore: null,
           region: null,
-          ip: null,
           version: null,
         },
       });
@@ -179,15 +185,11 @@ export async function POST(req: Request) {
           qfScore: null,
           trustScore: null,
           region: null,
-          ip: null,
           version: null,
         },
       });
 
-      return {
-        event,
-        balance,
-      };
+      return { event, balance };
     });
 
     return NextResponse.json(
@@ -201,10 +203,7 @@ export async function POST(req: Request) {
   } catch (e: any) {
     console.error("[sharing/heartbeat] error:", e);
     return NextResponse.json(
-      {
-        ok: false,
-        error: e?.message || "Internal server error",
-      },
+      { ok: false, error: e?.message || "Internal server error" },
       { status: 500 }
     );
   }

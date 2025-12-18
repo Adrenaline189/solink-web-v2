@@ -1,4 +1,3 @@
-// app/api/farm/credit/route.ts
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import type { Prisma } from "@prisma/client";
@@ -57,6 +56,8 @@ export async function POST(req: Request) {
       );
     }
 
+    const amt = Math.round(amount);
+
     // หา user จาก userId หรือ wallet
     const where: { id?: string; wallet?: string | null } = {};
     if (userId) where.id = userId;
@@ -71,6 +72,12 @@ export async function POST(req: Request) {
       );
     }
 
+    const now = new Date();
+
+    // dedupeKey ต้อง unique เสมอ
+    // ใช้ timestamp + userId + amount เพื่อกันชน
+    const dedupeKey = `farm-credit:${user.id}:${now.toISOString()}:${amt}`;
+
     // ทำเป็น transaction:
     //  1) log PointEvent
     //  2) อัปเดต PointBalance (balance)
@@ -79,8 +86,15 @@ export async function POST(req: Request) {
         const event = await tx.pointEvent.create({
           data: {
             userId: user.id,
-            type: "extension_farm", // ใช้ type เดียวกับ heartbeat เพื่อความง่าย
-            amount: Math.round(amount),
+            type: "extension_farm", // legacy / manual credit
+            amount: amt,
+
+            // ✅ required fields ตาม schema
+            source: "farm-credit",
+            ruleVersion: "v1",
+            dedupeKey,
+            occurredAt: now,
+
             meta: {
               source: "farm_credit",
               reason: reason ?? null,
@@ -91,11 +105,11 @@ export async function POST(req: Request) {
         const balance = await tx.pointBalance.upsert({
           where: { userId: user.id },
           update: {
-            balance: { increment: Math.round(amount) },
+            balance: { increment: amt },
           },
           create: {
             userId: user.id,
-            balance: Math.round(amount),
+            balance: amt,
             slk: 0,
           },
         });

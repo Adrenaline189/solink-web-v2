@@ -1,6 +1,7 @@
 // app/api/admin/convert-toggle/route.ts
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/server/db";
+import { prisma } from "@/lib/prisma";
+
 import { requireAdmin } from "@/lib/auth";
 
 function boolFromString(v: string | null | undefined, defaultVal = true): boolean {

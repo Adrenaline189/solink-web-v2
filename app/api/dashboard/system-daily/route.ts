@@ -1,4 +1,3 @@
-// app/api/dashboard/system-daily/route.ts
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import type { DashboardRange } from "@/types/dashboard";
@@ -23,14 +22,12 @@ export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
     const range = (searchParams.get("range") as DashboardRange) || "7d";
-
     const { startUtc, endUtc } = getRangeBounds(range);
 
-    // NOTE: ปรับชื่อ model / field ตาม schema จริงของคุณ
-    // ที่เคยส่งให้ดูมีตาราง MetricsDaily ที่ userId = "system" สำหรับ global
     const rows = await prisma.metricsDaily.findMany({
       where: {
-        userId: "system",
+        // ✅ รองรับทั้ง global(null) และ legacy("system")
+        OR: [{ userId: null }, { userId: "system" }],
         dayUtc: {
           gte: startUtc,
           lt: endUtc,
@@ -60,13 +57,11 @@ export async function GET(req: Request) {
     };
 
     return NextResponse.json(payload);
-  } catch (e) {
+  } catch (e: any) {
     console.error("system-daily error:", e);
     return NextResponse.json(
-      {
-        ok: false,
-        error: "Failed to fetch system daily stats",
-      },
+      // ✅ โชว์ message ชั่วคราว จะได้รู้สาเหตุถ้ายัง 500
+      { ok: false, error: e?.message || "Failed to fetch system daily stats" },
       { status: 500 }
     );
   }
