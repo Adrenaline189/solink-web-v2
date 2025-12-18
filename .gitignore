@@ -31,3 +31,10 @@ logs/
 .env.*
 .env
 .env.*
+
+# ---- Dev / Debug scripts (do not commit) ----
+scripts/debug-*
+scripts/dev-*
+scripts/inspect-*
+scripts/check-*
+scripts/seed-*
