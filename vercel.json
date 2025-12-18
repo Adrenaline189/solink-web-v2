@@ -2,7 +2,11 @@
   "crons": [
     {
       "path": "/api/cron/rollup-hourly",
-      "schedule": "0 * * * *"
+      "schedule": "5 * * * *"
+    },
+    {
+      "path": "/api/cron/rollup-daily",
+      "schedule": "10 0 * * *"
     }
   ]
 }

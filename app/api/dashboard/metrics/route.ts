@@ -1,3 +1,4 @@
+// app/api/dashboard/metrics/route.ts
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import type { DashboardRange } from "@/types/dashboard";
@@ -23,14 +24,11 @@ export async function GET(req: Request) {
     const range = (searchParams.get("range") as DashboardRange) || "today";
     const { startUtc, endUtc } = getRangeBounds(range);
 
+    // ✅ Global/System rows: รองรับทั้ง userId = null (global) และ legacy("system")
     const rows = await prisma.metricsHourly.findMany({
       where: {
-        // ✅ รองรับทั้ง global(null) และ legacy("system")
         OR: [{ userId: null }, { userId: "system" }],
-        hourUtc: {
-          gte: startUtc,
-          lt: endUtc,
-        },
+        hourUtc: { gte: startUtc, lt: endUtc },
       },
       orderBy: { hourUtc: "asc" },
     });
@@ -52,11 +50,10 @@ export async function GET(req: Request) {
     };
 
     return NextResponse.json(payload);
-  } catch (e: any) {
+  } catch (e) {
     console.error("metrics error:", e);
     return NextResponse.json(
-      // ✅ โชว์ message ชั่วคราว จะได้รู้สาเหตุถ้ายัง 500
-      { ok: false, error: e?.message || "Failed to fetch metrics" },
+      { ok: false, error: "Failed to fetch metrics" },
       { status: 500 }
     );
   }
