@@ -39,7 +39,6 @@
     "components/**/*",
     "lib/**/*",
     "server/**/*",
-    "scripts/**/*",
     "types/**/*",
     "**/*.ts",
     "**/*.tsx",
@@ -47,6 +46,7 @@
   ],
   "exclude": [
     "node_modules",
-    ".next"
+    ".next",
+    "scripts"
   ]
 }
