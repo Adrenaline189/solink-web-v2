@@ -1,7 +1,12 @@
-// app/dashboard/page.tsx
 "use client";
 
-import type { DashboardRange } from "@/types/dashboard";
+import type {
+  DashboardRange,
+  DashboardRealtime,
+  DashboardSummary,
+  HourlyPoint,
+  Tx,
+} from "@/types/dashboard";
 
 import NextDynamic from "next/dynamic";
 const WalletMultiButton = NextDynamic(
@@ -9,7 +14,7 @@ const WalletMultiButton = NextDynamic(
   { ssr: false }
 );
 
-import { Suspense, useEffect, useState, useCallback, useMemo } from "react";
+import React, { Suspense, useEffect, useState, useCallback, useMemo } from "react";
 export const dynamic = "force-dynamic";
 
 import { Card, CardContent } from "../../components/ui/card";
@@ -25,8 +30,7 @@ import {
   LineChart as LineIcon,
 } from "lucide-react";
 
-import type { DashboardSummary, HourlyPoint, Tx } from "../../types/dashboard";
-import { fetchHourly, fetchTransactions } from "../../lib/data/dashboard";
+import { fetchHourly, fetchRealtime, fetchTransactions } from "../../lib/data/dashboard";
 
 import HourlyPoints from "../../components/charts/HourlyPoints";
 import { useWallet } from "@solana/wallet-adapter-react";
@@ -94,6 +98,7 @@ async function fetchDashboardSummaryClient(
       method: "GET",
       cache: "no-store",
       signal,
+      credentials: "include",
     });
 
     if (!res.ok) {
@@ -107,6 +112,7 @@ async function fetchDashboardSummaryClient(
       return data.summary as DashboardSummary;
     }
 
+    // fallback (legacy response)
     return {
       pointsToday: data.pointsToday ?? 0,
       totalPoints: data.totalPoints ?? 0,
@@ -135,6 +141,10 @@ function DashboardInner() {
   const [txData, setTxData] = useState<Tx[]>([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
+
+  // ✅ Realtime (Points Today - UTC day)
+  const [realtime, setRealtime] = useState<DashboardRealtime | null>(null);
+  const REALTIME_REFRESH_MS = 5_000;
 
   const [range, setRange] = useState<DashboardRange>("today");
   const { prefs } = usePrefs();
@@ -168,7 +178,7 @@ function DashboardInner() {
   const [userDaily, setUserDaily] = useState<UserDailyPoint[]>([]);
   const [userDailyLoading, setUserDailyLoading] = useState(false);
   const [userDailyError, setUserDailyError] = useState<string | null>(null);
-  const [dailyRange, setDailyRange] = useState<"today" | "7d" | "30d">("7d");
+  const [dailyRange, setDailyRange] = useState<DashboardRange>("7d");
 
   // ---- Streak (via /api/dashboard/streak) ----
   const [streak, setStreak] = useState<StreakData | null>(null);
@@ -179,7 +189,11 @@ function DashboardInner() {
 
   // Node latency monitoring
   const [latency, setLatency] = useState<number | null>(null);
-  const [latencySeries, setLatencySeries] = useState<Array<{ idx: number; ms: number }>>([]);
+  const [latencySeries, setLatencySeries] = useState<Array<{ ts: string; latencyMs: number }>>([]);
+  const [pingConnected, setPingConnected] = useState<boolean>(false);
+  const [pingRegion, setPingRegion] = useState<string | null>(null);
+  const [pingIp, setPingIp] = useState<string | null>(null);
+  const [pingVersion, setPingVersion] = useState<string | null>(null);
 
   // refetch interval (ms) สำหรับ metrics ระบบ
   const SYS_REFRESH_MS = 30_000;
@@ -226,6 +240,7 @@ function DashboardInner() {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ wallet: address }),
+      credentials: "include",
     }).catch(() => {});
 
     // 🔐 ยิง /api/auth/login เพื่อให้ server เซ็ต cookie solink_auth
@@ -235,6 +250,7 @@ function DashboardInner() {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ wallet: address }),
+          credentials: "include",
         });
         if (!res.ok) {
           console.error("auth/login failed:", await res.text());
@@ -249,7 +265,7 @@ function DashboardInner() {
   useEffect(() => {
     (async () => {
       try {
-        const res = await fetch("/api/auth/me", { cache: "no-store" });
+        const res = await fetch("/api/auth/me", { cache: "no-store", credentials: "include" });
         const json = await res.json();
         console.log("auth status:", json);
       } catch (e) {
@@ -292,34 +308,53 @@ function DashboardInner() {
     return cleanup;
   }, [refresh]);
 
+  // ✅ realtime polling (independent from range)
+  const refreshRealtime = useCallback(async (signal?: AbortSignal) => {
+    try {
+      const data = await fetchRealtime(signal);
+      if (data && data.ok) setRealtime(data);
+      else setRealtime(null);
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  useEffect(() => {
+    const ac = new AbortController();
+    refreshRealtime(ac.signal);
+    const t = setInterval(() => refreshRealtime(), REALTIME_REFRESH_MS);
+    return () => {
+      ac.abort();
+      clearInterval(t);
+    };
+  }, [refreshRealtime]);
+
   /* reset tx visible เมื่อชุด tx เปลี่ยน (เปลี่ยน range) */
   useEffect(() => {
     setTxVisible(TX_PAGE_SIZE);
   }, [txData]);
 
   /* load System Metrics (GLOBAL Hourly) จาก /api/dashboard/metrics + auto refresh */
-  const loadSystemMetrics = useCallback(
-    async (r: DashboardRange, signal?: AbortSignal) => {
-      try {
-        setSysLoading(true);
-        const res = await fetch(`/api/dashboard/metrics?range=${r}`, {
-          cache: "no-store",
-          signal,
-        });
-        if (!res.ok) throw new Error("Failed to fetch /api/dashboard/metrics");
-        const json: SystemMetricsResp = await res.json();
-        setSysDailyTotalFromHourly(json.totalPoints ?? 0);
-        setSysHourly(Array.isArray(json.hourly) ? json.hourly : []);
-        setSysError(null);
-      } catch (e: any) {
-        console.error("metrics error:", e);
-        setSysError(e?.message || "Failed to fetch metrics");
-      } finally {
-        setSysLoading(false);
-      }
-    },
-    []
-  );
+  const loadSystemMetrics = useCallback(async (r: DashboardRange, signal?: AbortSignal) => {
+    try {
+      setSysLoading(true);
+      const res = await fetch(`/api/dashboard/metrics?range=${r}`, {
+        cache: "no-store",
+        signal,
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error("Failed to fetch /api/dashboard/metrics");
+      const json: SystemMetricsResp = await res.json();
+      setSysDailyTotalFromHourly(json.totalPoints ?? 0);
+      setSysHourly(Array.isArray(json.hourly) ? json.hourly : []);
+      setSysError(null);
+    } catch (e: any) {
+      console.error("metrics error:", e);
+      setSysError(e?.message || "Failed to fetch metrics");
+    } finally {
+      setSysLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
     const ac = new AbortController();
@@ -338,6 +373,7 @@ function DashboardInner() {
       const res = await fetch(`/api/dashboard/system-daily?range=${r}`, {
         cache: "no-store",
         signal,
+        credentials: "include",
       });
       if (!res.ok) throw new Error("Failed to fetch /api/dashboard/system-daily");
       const json: SystemDailyResp = await res.json();
@@ -373,7 +409,7 @@ function DashboardInner() {
     async function loadStreak() {
       try {
         setStreakError(null);
-        const res = await fetch("/api/dashboard/streak");
+        const res = await fetch("/api/dashboard/streak", { credentials: "include" });
         const json = await res.json();
         if (!res.ok || !json.ok) {
           throw new Error(json?.error || "Failed to load streak");
@@ -395,7 +431,6 @@ function DashboardInner() {
 
     loadStreak();
 
-    // ถ้าอยากให้ refresh เมื่อเปลี่ยน range สามารถเปลี่ยน [] เป็น [range]
     return () => {
       cancelled = true;
     };
@@ -409,7 +444,9 @@ function DashboardInner() {
       try {
         setUserDailyLoading(true);
         setUserDailyError(null);
-        const res = await fetch(`/api/dashboard/user-daily?range=${dailyRange}`);
+        const res = await fetch(`/api/dashboard/user-daily?range=${dailyRange}`, {
+          credentials: "include",
+        });
         const json = await res.json();
         if (!res.ok || !json.ok) {
           throw new Error(json?.error || "Failed to load user daily points");
@@ -424,9 +461,7 @@ function DashboardInner() {
           setUserDailyError(e?.message || "Failed to load");
         }
       } finally {
-        if (!cancelled) {
-          setUserDailyLoading(false);
-        }
+        if (!cancelled) setUserDailyLoading(false);
       }
     }
 
@@ -439,21 +474,52 @@ function DashboardInner() {
 
   // Node ping latency monitor (real-time)
   useEffect(() => {
-    let cancelled = false;
-
     const pingOnce = async () => {
+      const t0 = performance.now();
       try {
-        const start = performance.now();
-        const res = await fetch(`/api/dashboard/ping?ts=${Date.now()}`, { cache: "no-store" });
-        const end = performance.now();
-        if (!res.ok) return;
-        const ms = end - start;
-        if (cancelled) return;
-        setLatency(ms);
-        setLatencySeries((prev) => {
-          const next = [...prev, { idx: (prev[prev.length - 1]?.idx ?? 0) + 1, ms }];
-          return next.slice(-24); // เก็บล่าสุด 24 sample
-        });
+        const r = await fetch("/api/dashboard/ping", { cache: "no-store" });
+        const t1 = performance.now();
+
+        // fallback: ถ้า API ไม่ส่ง latencyMs (หรือ null) ให้ใช้ RTT ของ fetch แทน
+        const fallbackRtt = Math.max(1, Math.round(t1 - t0));
+        const j = (await r.json().catch(() => null)) as any;
+
+        if (j && typeof j === "object") {
+          setPingConnected(!!j.connected && !!j.ok);
+          setPingRegion(j.region ?? null);
+          setPingIp(j.ip ?? null);
+          setPingVersion(j.version ?? null);
+
+          const apiLatency = typeof j.latencyMs === "number" ? j.latencyMs : null;
+          const ms = apiLatency ?? fallbackRtt;
+
+          setLatency(ms);
+
+          const s = Array.isArray(j.series) ? j.series : [];
+          const cooked = s
+            .map((p: any) => {
+              const ts = typeof p?.ts === "string" ? p.ts : null;
+              const lm = typeof p?.latencyMs === "number" ? p.latencyMs : null;
+              if (!ts || lm == null) return null;
+              return { ts, latencyMs: lm };
+            })
+            .filter(Boolean) as Array<{ ts: string; latencyMs: number }>;
+
+          if (cooked.length) {
+            setLatencySeries(cooked.slice(-60));
+          } else {
+            setLatencySeries((prev) => {
+              const next = [...prev, { ts: new Date().toISOString(), latencyMs: ms }];
+              return next.slice(-60);
+            });
+          }
+        } else {
+          setLatency(fallbackRtt);
+          setLatencySeries((prev) => {
+            const next = [...prev, { ts: new Date().toISOString(), latencyMs: fallbackRtt }];
+            return next.slice(-60);
+          });
+        }
       } catch {
         // ignore
       }
@@ -461,11 +527,7 @@ function DashboardInner() {
 
     pingOnce();
     const id = setInterval(pingOnce, 15_000);
-
-    return () => {
-      cancelled = true;
-      clearInterval(id);
-    };
+    return () => clearInterval(id);
   }, []);
 
   /* ------------------------------------------------------------------
@@ -479,22 +541,31 @@ function DashboardInner() {
 
     const sendHeartbeat = async () => {
       try {
-        const res = await fetch("/api/sharing/heartbeat", {
+        const r = await fetch("/api/sharing/heartbeat", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           cache: "no-store",
+          credentials: "include",
           body: JSON.stringify({
-            bandwidthMbps: 10, // mock ค่า speed ตอนนี้ เอาไว้ก่อน
-            uptimeSec: 60, // mock uptime ต่อ 1 ช่วง
+            uptimeSeconds: 65,
+            downloadMbps: summary?.avgBandwidthMbps ? Number(summary.avgBandwidthMbps) : 12.3,
+            uploadMbps: null,
+            latencyMs: latency ?? null,
           }),
         });
 
-        const json = await res.json();
-        if (!json.ok) {
-          console.warn("Heartbeat failed:", json.error);
-        } else {
-          console.log("Heartbeat OK → +", json.pointsEarned, "pts");
-          refresh(); // รีโหลด summary + hourly + tx
+        const j = (await r.json().catch(() => null)) as any;
+
+        if (j && typeof j === "object") {
+          // ถ้า server ให้แต้มจริง หรือบอกว่า active=false (เพื่อ sync UI)
+          if (typeof j.awarded === "number" && j.awarded > 0) {
+            refreshRealtime();
+            refresh(); // summary + hourly + tx
+            loadSystemMetrics(range);
+            loadSystemDaily(range);
+          } else if (j.active === false) {
+            refresh();
+          }
         }
       } catch (e) {
         console.error("Heartbeat error:", e);
@@ -504,7 +575,6 @@ function DashboardInner() {
     if (sharingActive) {
       console.log("🔥 Auto-heartbeat started");
       interval = setInterval(sendHeartbeat, 15_000);
-      // ยิงครั้งแรกทันที
       sendHeartbeat();
     }
 
@@ -512,7 +582,18 @@ function DashboardInner() {
       if (interval) clearInterval(interval);
       console.log("🛑 Auto-heartbeat stopped");
     };
-  }, [sharingActive, connected, address, refresh]);
+  }, [
+    sharingActive,
+    connected,
+    address,
+    latency,
+    summary?.avgBandwidthMbps,
+    refresh,
+    refreshRealtime,
+    loadSystemMetrics,
+    loadSystemDaily,
+    range,
+  ]);
 
   const copy = async () => {
     try {
@@ -522,7 +603,9 @@ function DashboardInner() {
     } catch {}
   };
 
-  const nodeStatus = connected ? "● Connected" : "○ Disconnected";
+  // ✅ Points Today display: realtime first, fallback summary
+  const pointsTodayDisplay =
+    realtime?.ok ? realtime.pointsToday : summary ? summary.pointsToday : null;
 
   // เตรียมข้อมูลสำหรับกราฟ System Hourly (UTC)
   const sysRows = useMemo(
@@ -543,19 +626,13 @@ function DashboardInner() {
     [sysHourly, range]
   );
 
-  const sysPeak = useMemo(
-    () => sysRows.reduce((m, r) => Math.max(m, r.points), 0),
-    [sysRows]
-  );
+  const sysPeak = useMemo(() => sysRows.reduce((m, r) => Math.max(m, r.points), 0), [sysRows]);
 
-  const userDailyTotal = useMemo(
-    () => userDaily.reduce((sum, d) => sum + d.points, 0),
-    [userDaily]
-  );
+  const userDailyTotal = useMemo(() => userDaily.reduce((sum, d) => sum + d.points, 0), [userDaily]);
 
   // latency chart data
   const latencyChartData = useMemo(
-    () => latencySeries.map((p) => ({ idx: p.idx, ms: Math.round(p.ms) })),
+    () => latencySeries.map((p) => ({ ts: p.ts, ms: Math.round(p.latencyMs) })),
     [latencySeries]
   );
 
@@ -570,15 +647,10 @@ function DashboardInner() {
   const sysRangeLabel =
     range === "today" ? "Today total" : range === "7d" ? "Last 7 days total" : "Last 30 days total";
 
-  const sysDailyLabel =
-    range === "today" ? "Today" : range === "7d" ? "Last 7 days" : "Last 30 days";
+  const sysDailyLabel = range === "today" ? "Today" : range === "7d" ? "Last 7 days" : "Last 30 days";
 
   const userDailyLabel =
-    dailyRange === "today"
-      ? "Today"
-      : dailyRange === "7d"
-      ? "Last 7 days"
-      : "Last 30 days";
+    dailyRange === "today" ? "Today" : dailyRange === "7d" ? "Last 7 days" : "Last 30 days";
 
   // Uptime meter V2 value (%)
   const uptimePct =
@@ -598,7 +670,7 @@ function DashboardInner() {
 
     (async () => {
       try {
-        const res = await fetch("/api/sharing/status", { cache: "no-store" });
+        const res = await fetch("/api/sharing/status", { cache: "no-store", credentials: "include" });
         const json = await res.json();
         if (!res.ok || !json.ok) {
           throw new Error(json?.error || "Failed to load sharing status");
@@ -621,14 +693,14 @@ function DashboardInner() {
     };
   }, [connected, address]);
 
-    // -------- Sharing: toggle handler (/api/sharing/toggle) --------
+  // -------- Sharing: toggle handler (/api/sharing/toggle) --------
   const handleToggleSharing = async () => {
     if (!connected || !address) {
       setSharingError("Please connect your wallet first.");
       return;
     }
 
-    const next = !sharingActive; // สถานะใหม่ที่ต้องการสลับเป็น
+    const next = !sharingActive;
 
     try {
       setSharingLoading(true);
@@ -659,7 +731,6 @@ function DashboardInner() {
       setSharingLoading(false);
     }
   };
-
 
   // -------- Convert handler (เรียก API /api/points/convert) --------
   const handleConvert = async () => {
@@ -692,6 +763,7 @@ function DashboardInner() {
       const res = await fetch("/api/points/convert", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify({ wallet: address, points: pointsNum }),
       });
 
@@ -706,11 +778,8 @@ function DashboardInner() {
         return;
       }
 
-      setConvertSuccess(
-        `Converted ${json.pointsSpent.toLocaleString()} pts → ${json.slkReceived} SLK`
-      );
+      setConvertSuccess(`Converted ${json.pointsSpent.toLocaleString()} pts → ${json.slkReceived} SLK`);
 
-      // refresh summary + tx หลัง convert สำเร็จ
       refresh();
       setConvertPts("");
     } catch (e: any) {
@@ -736,32 +805,20 @@ function DashboardInner() {
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6">
           <div>
             <h1 className="text-3xl font-bold tracking-tight">Solink Dashboard</h1>
-            <p className="text-slate-400">
-              {loading ? "Loading data…" : "Wired to API routes."}
-            </p>
+            <p className="text-slate-400">{loading ? "Loading data…" : "Wired to API routes."}</p>
             {err && <p className="text-rose-400 text-sm mt-1">Error: {err}</p>}
 
             <p className="text-xs text-slate-400 mt-1">
               Sharing:{" "}
               {!connected ? (
-                <span className="text-slate-400">
-                  Connect your wallet to start
-                </span>
+                <span className="text-slate-400">Connect your wallet to start</span>
               ) : (
-                <span
-                  className={
-                    sharingActive ? "text-emerald-400" : "text-amber-400"
-                  }
-                >
+                <span className={sharingActive ? "text-emerald-400" : "text-amber-400"}>
                   {sharingActive ? "Active" : "Paused"}
                 </span>
               )}
             </p>
-            {sharingError && (
-              <p className="text-[11px] text-rose-400 mt-1">
-                Sharing error: {sharingError}
-              </p>
-            )}
+            {sharingError && <p className="text-[11px] text-rose-400 mt-1">Sharing error: {sharingError}</p>}
           </div>
 
           {/* Wallet + Start Sharing */}
@@ -780,11 +837,7 @@ function DashboardInner() {
                   : "Start sharing bandwidth"
               }
             >
-              {sharingLoading
-                ? "Updating…"
-                : sharingActive
-                ? "Stop Sharing"
-                : "Start Sharing Bandwidth"}{" "}
+              {sharingLoading ? "Updating…" : sharingActive ? "Stop Sharing" : "Start Sharing Bandwidth"}{" "}
               <Link2 className="ml-2 h-4 w-4" />
             </Button>
           </div>
@@ -794,10 +847,14 @@ function DashboardInner() {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
           <KPI
             title="Points Today"
-            value={summary ? summary.pointsToday.toLocaleString() : "—"}
-            sub={`from daily cap ${summary ? (2000).toLocaleString() : "—"}`}
+            value={pointsTodayDisplay != null ? pointsTodayDisplay.toLocaleString() : "—"}
+            sub={
+              realtime?.ok
+                ? `live (UTC): ${(realtime.livePoints ?? 0).toLocaleString()}  rolled: ${(realtime.rolledPoints ?? 0).toLocaleString()}`
+                : `from daily cap ${summary ? (2000).toLocaleString() : "—"}`
+            }
             icon={<Award className="h-5 w-5" />}
-            loading={loading}
+            loading={loading && pointsTodayDisplay == null}
           />
           <KPI
             title="Total Points"
@@ -807,12 +864,13 @@ function DashboardInner() {
             loading={loading}
           />
           <KPI
-            title="Uptime Today"
-            value={summary ? `${summary.uptimeHours} h` : "—"}
-            sub={summary ? `Goal: ≥ ${summary.goalHours} h` : "—"}
-            icon={<Activity className="h-5 w-5" />}
-            loading={loading}
-          />
+  title="Uptime Today"
+  value={summary ? `${Number(summary.uptimeHours).toFixed(2)} h` : "—"}
+  sub={summary ? `Goal: ≥ ${Number(summary.goalHours).toFixed(0)} h` : "—"}
+  icon={<Activity className="h-5 w-5" />}
+  loading={loading}
+/>
+
           <KPI
             title="Average Bandwidth"
             value={summary ? `${summary.avgBandwidthMbps} Mbps` : "—"}
@@ -841,26 +899,12 @@ function DashboardInner() {
           <Card>
             <CardContent className="p-5">
               <h3 className="text-lg font-semibold mb-3">Quality &amp; Reliability</h3>
-              <Meter
-                label="Quality Factor"
-                value={summary?.qf ?? 0}
-                color="from-cyan-400 to-indigo-500"
-              />
+              <Meter label="Quality Factor" value={summary?.qf ?? 0} color="from-cyan-400 to-indigo-500" />
               <div className="h-3" />
-              <Meter
-                label="Trust Score"
-                value={summary?.trust ?? 0}
-                color="from-emerald-400 to-cyan-400"
-              />
+              <Meter label="Trust Score" value={summary?.trust ?? 0} color="from-emerald-400 to-cyan-400" />
               <div className="h-3" />
-              <Meter
-                label="Uptime Today"
-                value={uptimePct}
-                color="from-sky-400 to-emerald-400"
-              />
-              <div className="text-sm text-slate-400 mt-2">
-                Uptime target is computed from your daily goal hours.
-              </div>
+              <Meter label="Uptime Today" value={uptimePct} color="from-sky-400 to-emerald-400" />
+              <div className="text-sm text-slate-400 mt-2">Uptime target is computed from your daily goal hours.</div>
             </CardContent>
           </Card>
         </div>
@@ -875,16 +919,13 @@ function DashboardInner() {
                   <BarChart4 className="h-4 w-4" /> System Hourly (UTC)
                 </h3>
                 <div className="text-xs text-slate-400">
-                  {sysRangeLabel}:{" "}
-                  {sysLoading ? "—" : sysDailyTotalFromHourly.toLocaleString()} pts
+                  {sysRangeLabel}: {sysLoading ? "—" : sysDailyTotalFromHourly.toLocaleString()} pts
                 </div>
               </div>
 
               <div className="w-full h-72 rounded-2xl border border-slate-800 bg-slate-950/40 p-2">
                 {sysLoading ? (
-                  <div className="flex h-full items-center justify-center text-slate-500">
-                    Loading…
-                  </div>
+                  <div className="flex h-full items-center justify-center text-slate-500">Loading…</div>
                 ) : sysError ? (
                   <div className="text-rose-400">{sysError}</div>
                 ) : sysRows.length === 0 ? (
@@ -927,9 +968,7 @@ function DashboardInner() {
                   </ResponsiveContainer>
                 )}
               </div>
-              <div className="mt-2 text-xs text-slate-500">
-                Peak hour: {sysPeak.toLocaleString()} pts
-              </div>
+              <div className="mt-2 text-xs text-slate-500">Peak hour: {sysPeak.toLocaleString()} pts</div>
             </CardContent>
           </Card>
 
@@ -946,9 +985,7 @@ function DashboardInner() {
               </div>
               <div className="w-full h-64 rounded-2xl border border-slate-800 bg-slate-950/40 p-2">
                 {sysDailyLoading ? (
-                  <div className="flex h-full items-center justify-center text-slate-500">
-                    Loading…
-                  </div>
+                  <div className="flex h-full items-center justify-center text-slate-500">Loading…</div>
                 ) : sysDailyError ? (
                   <div className="text-rose-400 text-sm">{sysDailyError}</div>
                 ) : sysDailySeries.length === 0 ? (
@@ -977,9 +1014,7 @@ function DashboardInner() {
                   </ResponsiveContainer>
                 )}
               </div>
-              <div className="mt-2 text-xs text-slate-500">
-                Aurora range color: emerald → sky (global daily load).
-              </div>
+              <div className="mt-2 text-xs text-slate-500">Aurora range color: emerald → sky (global daily load).</div>
             </CardContent>
           </Card>
         </div>
@@ -1012,9 +1047,7 @@ function DashboardInner() {
                     Connect your wallet to see your daily points.
                   </div>
                 ) : userDailyLoading ? (
-                  <div className="flex h-full items-center justify-center text-slate-500">
-                    Loading…
-                  </div>
+                  <div className="flex h-full items-center justify-center text-slate-500">Loading…</div>
                 ) : userDailyError ? (
                   <div className="text-rose-400 text-sm">{userDailyError}</div>
                 ) : userDaily.length === 0 ? (
@@ -1023,10 +1056,7 @@ function DashboardInner() {
                   </div>
                 ) : (
                   <ResponsiveContainer width="100%" height="100%">
-                    <AreaChart
-                      data={userDaily}
-                      margin={{ top: 8, right: 12, left: 0, bottom: 0 }}
-                    >
+                    <AreaChart data={userDaily} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
                       <defs>
                         <linearGradient id="userDailyG" x1="0" y1="0" x2="0" y2="1">
                           <stop offset="5%" stopColor="#6366f1" stopOpacity={0.35} />
@@ -1047,14 +1077,7 @@ function DashboardInner() {
                         itemStyle={{ color: "#6366f1", fontSize: 12 }}
                         formatter={(v: number) => [`${v.toLocaleString()} pts`, "Daily points"]}
                       />
-                      <Area
-                        type="monotone"
-                        dataKey="points"
-                        stroke="#6366f1"
-                        strokeWidth={2}
-                        fill="url(#userDailyG)"
-                        fillOpacity={1}
-                      />
+                      <Area type="monotone" dataKey="points" stroke="#6366f1" strokeWidth={2} fill="url(#userDailyG)" fillOpacity={1} />
                     </AreaChart>
                   </ResponsiveContainer>
                 )}
@@ -1070,9 +1093,7 @@ function DashboardInner() {
                 <div className="flex items-center justify-between text-sm mb-1">
                   <span className="text-slate-400">Current streak</span>
                   <span className="font-semibold text-emerald-400">
-                    {streak
-                      ? `${streak.current} day${streak.current === 1 ? "" : "s"}`
-                      : "0 days"}
+                    {streak ? `${streak.current} day${streak.current === 1 ? "" : "s"}` : "0 days"}
                   </span>
                 </div>
                 <div className="flex items-center justify-between text-sm">
@@ -1081,11 +1102,7 @@ function DashboardInner() {
                     {streak ? `${streak.best} day${streak.best === 1 ? "" : "s"}` : "0 days"}
                   </span>
                 </div>
-                {streakError && (
-                  <p className="mt-2 text-xs text-rose-400">
-                    Error loading streak: {streakError}
-                  </p>
-                )}
+                {streakError && <p className="mt-2 text-xs text-rose-400">Error loading streak: {streakError}</p>}
                 {!streakError && (
                   <p className="text-xs text-slate-500 mt-2">
                     Streak counts consecutive days where your points are above zero.
@@ -1099,14 +1116,9 @@ function DashboardInner() {
                   Preview and convert your points to SLK. Example rate:{" "}
                   <span className="font-semibold">1000 pts = 1 SLK</span>.
                 </p>
-                <label
-                  htmlFor="convert-pts"
-                  className="text-xs text-slate-400 flex items-center justify-between mb-1"
-                >
+                <label htmlFor="convert-pts" className="text-xs text-slate-400 flex items-center justify-between mb-1">
                   <span>Points to convert</span>
-                  <span className="text-slate-500">
-                    Available: {summary?.totalPoints.toLocaleString() ?? "—"} pts
-                  </span>
+                  <span className="text-slate-500">Available: {summary?.totalPoints.toLocaleString() ?? "—"} pts</span>
                 </label>
                 <input
                   id="convert-pts"
@@ -1128,12 +1140,8 @@ function DashboardInner() {
                 >
                   {convertLoading ? "Converting…" : "Convert"}
                 </Button>
-                {convertError && (
-                  <p className="text-[11px] text-rose-400 mt-1">{convertError}</p>
-                )}
-                {convertSuccess && (
-                  <p className="text-[11px] text-emerald-400 mt-1">{convertSuccess}</p>
-                )}
+                {convertError && <p className="text-[11px] text-rose-400 mt-1">{convertError}</p>}
+                {convertSuccess && <p className="text-[11px] text-emerald-400 mt-1">{convertSuccess}</p>}
                 {!convertError && !convertSuccess && (
                   <p className="text-[11px] text-slate-500 mt-1">
                     This will convert your off-chain points to SLK according to the current rate.
@@ -1149,9 +1157,7 @@ function DashboardInner() {
           <Card className="lg:col-span-2">
             <CardContent className="p-5">
               <h3 className="text-lg font-semibold">Invite &amp; Earn</h3>
-              <p className="text-slate-400 mb-4">
-                Share your referral link and earn bonus points when friends join.
-              </p>
+              <p className="text-slate-400 mb-4">Share your referral link and earn bonus points when friends join.</p>
 
               <label htmlFor="ref-link" className="text-sm text-slate-400">
                 Your referral link
@@ -1181,22 +1187,17 @@ function DashboardInner() {
           <Card>
             <CardContent className="p-5">
               <h3 className="text-lg font-semibold mb-3">System Status</h3>
-              <StatusItem label="Node" value={nodeStatus} positive={connected} />
-              <StatusItem label="Region" value={summary?.region ?? "—"} />
-              <StatusItem label="IP Address" value={summary?.ip ?? "—"} />
-              <StatusItem label="Client Version" value={summary?.version ?? "—"} />
-              <StatusItem
-                label="Latency"
-                value={latency != null ? `~${Math.round(latency)} ms` : "Measuring…"}
-              />
+              <StatusItem label="Node" value={pingConnected ? "Connected" : "Disconnected"} positive={pingConnected} />
+              <StatusItem label="Region" value={pingRegion ?? "—"} />
+              <StatusItem label="IP Address" value={pingIp ?? "—"} />
+              <StatusItem label="Client Version" value={pingVersion ?? "—"} />
+              <StatusItem label="Latency" value={latency != null ? `~${Math.round(latency)} ms` : "Measuring…"} />
 
               {/* Session stability chart (latency history) */}
               <div className="mt-4">
                 <div className="flex items-center justify-between mb-1">
                   <span className="text-sm text-slate-300">Session stability</span>
-                  <span className="text-xs text-slate-500">
-                    Lower is better (ping latency)
-                  </span>
+                  <span className="text-xs text-slate-500">Lower is better (ping latency)</span>
                 </div>
                 <div className="w-full h-28 rounded-xl border border-slate-800 bg-slate-950/60 p-1.5">
                   {latencyChartData.length < 2 ? (
@@ -1208,18 +1209,13 @@ function DashboardInner() {
                       <LineChart data={latencyChartData}>
                         <CartesianGrid strokeDasharray="3 3" vertical={false} />
                         <XAxis
-                          dataKey="idx"
+                          dataKey="ts"
                           tickFormatter={() => ""}
                           tick={{ fontSize: 8 }}
                           axisLine={false}
                           tickLine={false}
                         />
-                        <YAxis
-                          tick={{ fontSize: 8 }}
-                          tickLine={false}
-                          axisLine={false}
-                          width={30}
-                        />
+                        <YAxis tick={{ fontSize: 8 }} tickLine={false} axisLine={false} width={30} />
                         <Tooltip
                           contentStyle={{
                             backgroundColor: "rgba(15,23,42,0.96)",
@@ -1232,14 +1228,7 @@ function DashboardInner() {
                           formatter={(v: number) => [`${v.toFixed(0)} ms`, "Latency"]}
                           labelFormatter={(idx: any) => `Sample #${idx}`}
                         />
-                        <Line
-                          type="monotone"
-                          dataKey="ms"
-                          stroke="#f97316"
-                          strokeWidth={1.8}
-                          dot={false}
-                          activeDot={{ r: 3 }}
-                        />
+                        <Line type="monotone" dataKey="ms" stroke="#f97316" strokeWidth={1.8} dot={false} activeDot={{ r: 3 }} />
                       </LineChart>
                     </ResponsiveContainer>
                   )}
@@ -1256,8 +1245,7 @@ function DashboardInner() {
               <h3 className="text-lg font-semibold">Recent Transactions</h3>
               {!loading && (
                 <span className="text-xs text-slate-500">
-                  Showing {txPage.length.toLocaleString()} of{" "}
-                  {txData.length.toLocaleString()} events
+                  Showing {txPage.length.toLocaleString()} of {txData.length.toLocaleString()} events
                 </span>
               )}
             </div>
@@ -1291,9 +1279,7 @@ function DashboardInner() {
                             <td className="py-2 pr-4">
                               <span className={typeDesc.className}>{typeDesc.label}</span>
                             </td>
-                            <td className="py-2 pr-4 font-semibold">
-                              {formatAmountPts(r.amount)}
-                            </td>
+                            <td className="py-2 pr-4 font-semibold">{formatAmountPts(r.amount)}</td>
                             <td className="py-2 pr-4 text-slate-400">{note || "—"}</td>
                           </tr>
                         );
@@ -1304,16 +1290,11 @@ function DashboardInner() {
                     <tr>
                       <td colSpan={4} className="pt-3">
                         <div className="flex items-center justify-between gap-3">
-                          <Button
-                            onClick={handleLoadMoreTx}
-                            className="rounded-xl px-4"
-                            variant="outline"
-                          >
+                          <Button onClick={handleLoadMoreTx} className="rounded-xl px-4" variant="outline">
                             Load more
                           </Button>
                           <span className="text-xs text-slate-500">
-                            Loaded {txPage.length.toLocaleString()} of{" "}
-                            {txData.length.toLocaleString()} events
+                            Loaded {txPage.length.toLocaleString()} of {txData.length.toLocaleString()} events
                           </span>
                         </div>
                       </td>
@@ -1384,15 +1365,7 @@ function Meter({ label, value, color }: { label: string; value: number; color: s
   );
 }
 
-function StatusItem({
-  label,
-  value,
-  positive,
-}: {
-  label: string;
-  value: string;
-  positive?: boolean;
-}) {
+function StatusItem({ label, value, positive }: { label: string; value: string; positive?: boolean }) {
   return (
     <div className="flex items-center justify-between py-1.5 border-b border-slate-800 last:border-none">
       <span className="text-slate-400 text-sm">{label}</span>
@@ -1448,13 +1421,7 @@ function formatAmountPts(v: number): string {
   return `${n.toLocaleString()} pts`;
 }
 
-function RangeRadios({
-  value,
-  onChange,
-}: {
-  value: DashboardRange;
-  onChange: (v: DashboardRange) => void;
-}) {
+function RangeRadios({ value, onChange }: { value: DashboardRange; onChange: (v: DashboardRange) => void }) {
   const opts: Array<{ v: DashboardRange; label: string }> = [
     { v: "today", label: "Today" },
     { v: "7d", label: "7d" },
@@ -1505,12 +1472,69 @@ function DashboardGlobalStyles() {
   return (
     <style jsx global>{`
       /* Progress meter width steps */
-      .mw-0 { width: 0% } .mw-5 { width: 5% } .mw-10 { width: 10% } .mw-15 { width: 15% }
-      .mw-20 { width: 20% } .mw-25 { width: 25% } .mw-30 { width: 30% } .mw-35 { width: 35% }
-      .mw-40 { width: 40% } .mw-45 { width: 45% } .mw-50 { width: 50% } .mw-55 { width: 55% }
-      .mw-60 { width: 60% } .mw-65 { width: 65% } .mw-70 { width: 70% } .mw-75 { width: 75% }
-      .mw-80 { width: 80% } .mw-85 { width: 85% } .mw-90 { width: 90% } .mw-95 { width: 95% }
-      .mw-100 { width: 100% }
+      .mw-0 {
+        width: 0%;
+      }
+      .mw-5 {
+        width: 5%;
+      }
+      .mw-10 {
+        width: 10%;
+      }
+      .mw-15 {
+        width: 15%;
+      }
+      .mw-20 {
+        width: 20%;
+      }
+      .mw-25 {
+        width: 25%;
+      }
+      .mw-30 {
+        width: 30%;
+      }
+      .mw-35 {
+        width: 35%;
+      }
+      .mw-40 {
+        width: 40%;
+      }
+      .mw-45 {
+        width: 45%;
+      }
+      .mw-50 {
+        width: 50%;
+      }
+      .mw-55 {
+        width: 55%;
+      }
+      .mw-60 {
+        width: 60%;
+      }
+      .mw-65 {
+        width: 65%;
+      }
+      .mw-70 {
+        width: 70%;
+      }
+      .mw-75 {
+        width: 75%;
+      }
+      .mw-80 {
+        width: 80%;
+      }
+      .mw-85 {
+        width: 85%;
+      }
+      .mw-90 {
+        width: 90%;
+      }
+      .mw-95 {
+        width: 95%;
+      }
+      .mw-100 {
+        width: 100%;
+      }
 
       /* ทำให้ WalletMultiButton เท่าปุ่ม Start Sharing เมื่ออยู่ใน .wa-equal */
       .wa-equal .wallet-adapter-button {
