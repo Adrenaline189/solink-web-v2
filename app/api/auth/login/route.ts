@@ -1,72 +1,56 @@
 // app/api/auth/login/route.ts
-import { NextResponse, NextRequest } from "next/server";
-import { SignJWT } from "jose";
+import { NextResponse } from "next/server";
+import crypto from "crypto";
 import { prisma } from "@/lib/prisma";
 
-const COOKIE_NAME = "solink_auth";
-const EXPIRES_SECONDS = 60 * 60 * 24 * 30; // 30 วัน
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
-function getSecretKey() {
-  const secret = process.env.JWT_SECRET;
-  if (!secret) throw new Error("JWT_SECRET is missing");
-  return new TextEncoder().encode(secret);
-}
-
-export async function POST(req: NextRequest) {
+export async function POST(req: Request) {
   try {
     const body = await req.json().catch(() => ({}));
-    const wallet = typeof body.wallet === "string" ? body.wallet.trim() : "";
+    const wallet = String(body?.wallet || "").trim();
 
     if (!wallet) {
-      return NextResponse.json(
-        { ok: false, error: "wallet required" },
-        { status: 400 }
-      );
+      return NextResponse.json({ ok: false, error: "wallet required" }, { status: 400 });
     }
 
-    // 1) หา / สร้าง User จาก wallet address
-    const user = await prisma.user.upsert({
-      where: { wallet },
-      update: {},
-      create: { wallet },
-    });
+    let user = await prisma.user.findFirst({ where: { wallet } });
+    if (!user) {
+      user = await prisma.user.create({ data: { wallet } });
+    }
 
-    const now = Math.floor(Date.now() / 1000);
+    const token = crypto
+      .createHash("sha256")
+      .update(`${wallet}:${Date.now()}:${process.env.AUTH_SECRET || "dev"}`)
+      .digest("hex");
 
-    // 2) สร้าง JWT เหมือนของเดิม (เก็บ wallet ไว้ใน token)
-    const token = await new SignJWT({ w: wallet })
-      .setProtectedHeader({ alg: "HS256", typ: "JWT" })
-      .setIssuedAt(now)
-      .setExpirationTime(now + EXPIRES_SECONDS)
-      .sign(getSecretKey());
+    const res = NextResponse.json(
+      { ok: true, wallet, userId: user.id },
+      { headers: { "Cache-Control": "no-store" } }
+    );
 
-    // 3) สร้าง response + set cookies
-    const res = NextResponse.json({ ok: true, userId: user.id });
+    const isProd = process.env.NODE_ENV === "production";
 
-    // cookie auth เดิม (ใช้ httpOnly)
-    res.cookies.set(COOKIE_NAME, token, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production", // ให้ localhost ใช้ได้
-      sameSite: "lax",
-      path: "/",
-      maxAge: EXPIRES_SECONDS,
-    });
-
-    // cookie ที่ฝั่ง sharing / heartbeat ใช้ (อ่านได้จาก server + browser)
     res.cookies.set("solink_wallet", wallet, {
       httpOnly: false,
-      secure: process.env.NODE_ENV === "production",
       sameSite: "lax",
+      secure: isProd,
       path: "/",
-      maxAge: EXPIRES_SECONDS,
+      maxAge: 60 * 60 * 24 * 30,
+    });
+
+    res.cookies.set("solink_auth", token, {
+      httpOnly: true,
+      sameSite: "lax",
+      secure: isProd,
+      path: "/",
+      maxAge: 60 * 60 * 24 * 30,
     });
 
     return res;
-  } catch (err) {
-    console.error("login failed:", err);
-    return NextResponse.json(
-      { ok: false, error: "internal error" },
-      { status: 500 }
-    );
+  } catch (e: any) {
+    console.error("auth/login error:", e);
+    return NextResponse.json({ ok: false, error: e?.message || "login failed" }, { status: 500 });
   }
 }

@@ -2,127 +2,95 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { prisma } from "@/lib/prisma";
-import type { DashboardRange } from "@/types/dashboard";
 
-/**
- * GET /api/dashboard/hourly?range=today|7d|30d
- *
- * คืนข้อมูลกราฟ Hourly Points (User) สำหรับ Dashboard
- * - อิงจาก MetricsHourly ของ user ปัจจุบัน (userId จาก wallet)
- * - แปลงเป็น array ของ HourlyPoint (label + points)
- *
- * response:
- * {
- *   ok: true,
- *   range: "today" | "7d" | "30d",
- *   startUtc: string | null,
- *   endUtc: string | null,
- *   items: Array<{ label: string; points: number }>
- * }
- */
-
-function truncateToDayUtc(d: Date): Date {
-  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 0, 0, 0, 0));
+function floorUtcDay(d: Date) {
+  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
 }
 
-function getRangeBounds(range: DashboardRange): { startUtc: Date; endUtc: Date } {
-  const now = new Date();
-  const endDay = truncateToDayUtc(now);
-  let startDay = new Date(endDay);
+function addDaysUtc(d: Date, days: number) {
+  return new Date(d.getTime() + days * 24 * 60 * 60 * 1000);
+}
 
-  switch (range) {
-    case "7d": {
-      startDay = new Date(endDay);
-      startDay.setUTCDate(startDay.getUTCDate() - 6);
-      break;
-    }
-    case "30d": {
-      startDay = new Date(endDay);
-      startDay.setUTCDate(startDay.getUTCDate() - 29);
-      break;
-    }
-    case "today":
-    default: {
-      startDay = new Date(endDay);
-      break;
-    }
-  }
-
-  const startUtc = startDay;
-  const endUtc = new Date(endDay);
-  endUtc.setUTCDate(endUtc.getUTCDate() + 1);
-
-  return { startUtc, endUtc };
+function getRange(q: string | null): "today" | "7d" | "30d" {
+  if (q === "7d" || q === "30d") return q;
+  return "today";
 }
 
 export async function GET(req: Request) {
-  try {
-    const { searchParams } = new URL(req.url);
-    const rangeParam = searchParams.get("range") as DashboardRange | null;
-    const range: DashboardRange = rangeParam === "7d" || rangeParam === "30d" ? rangeParam : "today";
+  const url = new URL(req.url);
+  const range = getRange(url.searchParams.get("range"));
 
-    const cookieStore = cookies();
-    const wallet = cookieStore.get("solink_wallet")?.value ?? null;
+  const store = cookies();
+  const wallet = store.get("solink_wallet")?.value;
+  const auth = store.get("solink_auth")?.value;
 
-    if (!wallet) {
-      return NextResponse.json(
-        {
-          ok: true,
-          range,
-          startUtc: null,
-          endUtc: null,
-          items: [] as Array<{ label: string; points: number }>,
-        },
-        { status: 200 }
-      );
-    }
+  if (!wallet || !auth) {
+    return NextResponse.json(
+      { ok: false, error: "Not authenticated", items: [] },
+      { status: 401, headers: { "Cache-Control": "no-store" } }
+    );
+  }
 
-    const user = await prisma.user.findFirst({
-      where: { wallet },
-    });
+  const user = await prisma.user.findFirst({ where: { wallet } });
+  if (!user) {
+    return NextResponse.json(
+      { ok: false, error: "User not found", items: [] },
+      { status: 404, headers: { "Cache-Control": "no-store" } }
+    );
+  }
 
-    if (!user) {
-      return NextResponse.json(
-        {
-          ok: true,
-          range,
-          startUtc: null,
-          endUtc: null,
-          items: [] as Array<{ label: string; points: number }>,
-        },
-        { status: 200 }
-      );
-    }
+  const now = new Date();
+  const day0 = floorUtcDay(now);
 
-    const { startUtc, endUtc } = getRangeBounds(range);
+  let startUtc: Date;
+  let endUtc: Date;
 
-    const rows = await prisma.metricsHourly.findMany({
+  if (range === "today") {
+    startUtc = day0;
+    endUtc = addDaysUtc(day0, 1);
+  } else if (range === "7d") {
+    startUtc = addDaysUtc(day0, -6);
+    endUtc = addDaysUtc(day0, 1);
+  } else {
+    startUtc = addDaysUtc(day0, -29);
+    endUtc = addDaysUtc(day0, 1);
+  }
+
+  // ✅ TODAY: ใช้ PointEvent live + ส่ง ts ด้วย (ให้ component ใช้ format เดียวกันทุก range)
+  if (range === "today") {
+    const events = await prisma.pointEvent.findMany({
       where: {
         userId: user.id,
-        hourUtc: {
-          gte: startUtc,
-          lt: endUtc,
-        },
+        occurredAt: { gte: startUtc, lt: endUtc },
       },
-      orderBy: { hourUtc: "asc" },
+      select: { occurredAt: true, amount: true },
+      orderBy: { occurredAt: "asc" },
     });
 
-    // ใส่ type ให้ r เป็น any แบบ explicit เพื่อกัน noImplicitAny
-    const items = rows.map((r: any) => {
-      const d = new Date(r.hourUtc);
-      const h = d.getUTCHours().toString().padStart(2, "0");
-      const md = `${(d.getUTCMonth() + 1).toString().padStart(2, "0")}/${d
-        .getUTCDate()
-        .toString()
-        .padStart(2, "0")}`;
-
-      const label = range === "today" ? `${h}:00` : `${md} ${h}:00`;
-
+    // 24 buckets (UTC)
+    const buckets = Array.from({ length: 24 }, (_, h) => {
+      const hourDate = new Date(
+        Date.UTC(
+          startUtc.getUTCFullYear(),
+          startUtc.getUTCMonth(),
+          startUtc.getUTCDate(),
+          h,
+          0,
+          0,
+          0
+        )
+      );
       return {
-        label,
-        points: r.pointsEarned ?? 0,
+        ts: hourDate.toISOString(), // ✅ สำคัญ
+        time: `${String(h).padStart(2, "0")}:00`,
+        points: 0,
       };
     });
+
+    for (const ev of events) {
+      const h = ev.occurredAt.getUTCHours();
+      if (h >= 0 && h < 24) buckets[h].points += ev.amount ?? 0;
+    }
 
     return NextResponse.json(
       {
@@ -130,18 +98,35 @@ export async function GET(req: Request) {
         range,
         startUtc: startUtc.toISOString(),
         endUtc: endUtc.toISOString(),
-        items,
+        items: buckets,
       },
-      { status: 200 }
-    );
-  } catch (e: any) {
-    console.error("/api/dashboard/hourly error:", e);
-    return NextResponse.json(
-      {
-        ok: false,
-        error: e?.message || "Internal server error",
-      },
-      { status: 500 }
+      { headers: { "Cache-Control": "no-store" } }
     );
   }
+
+  // 7d/30d: ใช้ MetricsHourly (rollup)
+  const rows = await prisma.metricsHourly.findMany({
+    where: {
+      userId: user.id,
+      hourUtc: { gte: startUtc, lt: endUtc },
+    },
+    orderBy: { hourUtc: "asc" },
+    select: { hourUtc: true, pointsEarned: true },
+  });
+
+  const items = rows.map((r) => ({
+    ts: r.hourUtc.toISOString(),
+    points: r.pointsEarned ?? 0,
+  }));
+
+  return NextResponse.json(
+    {
+      ok: true,
+      range,
+      startUtc: startUtc.toISOString(),
+      endUtc: endUtc.toISOString(),
+      items,
+    },
+    { headers: { "Cache-Control": "no-store" } }
+  );
 }

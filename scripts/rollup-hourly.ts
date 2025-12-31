@@ -1,193 +1,158 @@
 // scripts/rollup-hourly.ts
-// BullMQ v5: ใช้ Queue + Worker (ไม่มี QueueScheduler)
-// หมายเหตุ: รัน Worker ใน service แยก (ไม่ใช่ Vercel)
+// Full file: computes SYSTEM MetricsHourly (userId = null) for a given UTC hour.
+//
+// Usage (from your runner):
+//   import { enqueueHourlyRollup } from "./rollup-hourly.js";
+//   await enqueueHourlyRollup("2025-12-29T12:00:00Z");
+//
+// Notes:
+// - Assumes Prisma client at "@/lib/prisma" (as in your API routes).
+// - Works with your schema:
+//   - PointEvent: source, meta(Json?), occurredAt, amount(Int), etc.
+//   - Node: trustScore(Float), region(String?)
+//   - MetricsHourly: hourUtc, userId?, pointsEarned, avgBandwidth, qfScore, trustScore, region
+//
+import { prisma } from "@/lib/prisma";
 
-import { Queue, Worker, QueueEvents } from "bullmq";
-import type { JobsOptions } from "bullmq";
-import { getRedis } from "@/lib/redis";
-import { prisma } from "@/server/db";
-
-// ---- กำหนด USER สำหรับแถวสรุปทั้งระบบ (ต้องมีอยู่จริงในตาราง User) ----
-// แนะนำ: ตั้งใน .env → METRICS_GLOBAL_USER_ID=<id ของ user สักคน หรือ "system" แล้วสร้าง user นี้ไว้ใน DB>
-const GLOBAL_USER_ID = process.env.METRICS_GLOBAL_USER_ID ?? "system";
-
-// ---- Queue / Connection ----
-const connection = getRedis() as any; // bullmq v5 รองรับ ioredis instance
-const queueName = "metrics-rollup-hourly";
-
-export const queue = new Queue(queueName, { connection });
-export const queueEvents = new QueueEvents(queueName, { connection }); // optional
-
-/**
- * enqueue งานสรุปรายชั่วโมง
- * - ถ้าไม่ส่ง hourIso หรือส่ง "auto" → worker จะใช้เวลาปัจจุบัน ปัดลงต้นชั่วโมง (UTC)
- */
-export async function enqueueHourlyRollup(hourIso?: string) {
-  const opts: JobsOptions = {
-    removeOnComplete: 200,
-    removeOnFail: 100,
-  };
-
-  const payload =
-    !hourIso || hourIso === "auto"
-      ? {}
-      : { hourIso };
-
-  await queue.add("rollup", payload, opts);
+function toTopOfHourUTC(iso: string): Date {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) throw new Error(`Invalid hour ISO: ${iso}`);
+  d.setUTCMinutes(0, 0, 0);
+  return d;
 }
 
-/**
- * สตาร์ท Worker (รันใน background service เท่านั้น)
- */
-export function startHourlyWorker() {
-  return new Worker(
-    queueName,
-    async (job) => {
-      // ---- คำนวณช่วงชั่วโมง (UTC) ----
-      const rawHourIso = (job?.data?.hourIso as string | undefined) ?? undefined;
+function avg(nums: number[]): number | null {
+  if (!nums.length) return null;
+  const s = nums.reduce((a, b) => a + b, 0);
+  return s / nums.length;
+}
 
-      let baseIso: string;
-      if (!rawHourIso || rawHourIso === "auto") {
-        // ใช้เวลาปัจจุบัน ปัดลงเป็นต้นชั่วโมง
-        const now = Date.now();
-        const floored = now - (now % 3600000);
-        baseIso = new Date(floored).toISOString();
-      } else {
-        baseIso = rawHourIso;
-      }
+function mostCommonString(values: Array<string | null | undefined>): string | null {
+  const map = new Map<string, number>();
 
-      const hourStart = new Date(baseIso);
-      if (isNaN(hourStart.getTime())) {
-        throw new Error(`Invalid hourIso received: ${baseIso}`);
-      }
+  for (const v of values) {
+    if (!v) continue;
+    map.set(v, (map.get(v) ?? 0) + 1);
+  }
 
-      hourStart.setUTCMinutes(0, 0, 0);
-      const hourEnd = new Date(hourStart.getTime() + 3600_000);
+  let best: string | null = null;
+  let bestCount = 0;
 
-      // ---- ช่วงรายวัน (ใช้ซ้ำทั้ง GLOBAL + per-user) ----
-      const dayStart = new Date(
-        Date.UTC(
-          hourStart.getUTCFullYear(),
-          hourStart.getUTCMonth(),
-          hourStart.getUTCDate()
-        )
-      );
-      const dayEnd = new Date(dayStart.getTime() + 86_400_000);
+  map.forEach((count, key) => {
+    if (count > bestCount) {
+      best = key;
+      bestCount = count;
+    }
+  });
 
-      // ---- รวมแต้มราย user ภายในชั่วโมง ----
-      const grouped = await prisma.pointEvent.groupBy({
-        by: ["userId"],
-        where: { createdAt: { gte: hourStart, lt: hourEnd } },
-        _sum: { amount: true },
-      });
+  return best;
+}
 
-      // typed reduce (กัน implicit any)
-      const total = grouped.reduce(
-        (sum: number, g: (typeof grouped)[number]) =>
-          sum + (g._sum.amount ?? 0),
-        0
-      );
 
-      // ---- GLOBAL hourly row (ทั้งระบบ) ----
-      await prisma.metricsHourly.upsert({
-        where: {
-          hourUtc_userId_unique: {
-            hourUtc: hourStart,
-            userId: GLOBAL_USER_ID,
-          },
-        },
-        create: {
-          hourUtc: hourStart,
-          userId: GLOBAL_USER_ID,
-          pointsEarned: total,
-          qfScore: Math.sqrt(Math.max(total, 0)),
-        },
-        update: {
-          pointsEarned: total,
-          qfScore: Math.sqrt(Math.max(total, 0)),
-        },
-      });
+type RollupResult = {
+  hourUtc: string;
+  pointsEarned: number;
+  avgBandwidth: number | null;
+  trustScore: number | null; // 0..1 (same scale as Node.trustScore)
+  qfScore: number | null;    // 0..100
+  region: string | null;
+};
 
-      // ---- แถวตาม user + daily ต่อ user ----
-      for (const g of grouped) {
-        const userId = g.userId;
-        const points = g._sum.amount ?? 0;
+export async function enqueueHourlyRollup(hourIso: string): Promise<RollupResult> {
+  const hourStart = toTopOfHourUTC(hourIso);
+  const hourEnd = new Date(hourStart.getTime() + 60 * 60 * 1000);
 
-        // hourly ของ user
-        await prisma.metricsHourly.upsert({
-          where: {
-            hourUtc_userId_unique: {
-              hourUtc: hourStart,
-              userId,
-            },
-          },
-          create: {
-            hourUtc: hourStart,
-            userId,
-            pointsEarned: points,
-            qfScore: Math.sqrt(Math.max(points, 0)),
-          },
-          update: {
-            pointsEarned: points,
-            qfScore: Math.sqrt(Math.max(points, 0)),
-          },
-        });
-
-        // daily ของ user เดียวกัน (รวมทุกชั่วโมงในวันนั้น)
-        const sumUserDay = await prisma.metricsHourly.aggregate({
-          _sum: { pointsEarned: true },
-          where: {
-            hourUtc: { gte: dayStart, lt: dayEnd },
-            userId,
-          },
-        });
-
-        await prisma.metricsDaily.upsert({
-          where: {
-            dayUtc_userId_unique: {
-              dayUtc: dayStart,
-              userId,
-            },
-          },
-          create: {
-            dayUtc: dayStart,
-            userId,
-            pointsEarned: sumUserDay._sum.pointsEarned ?? 0,
-          },
-          update: {
-            pointsEarned: sumUserDay._sum.pointsEarned ?? 0,
-          },
-        });
-      }
-
-      // ---- rollup รายวัน GLOBAL (summary ทั้งระบบ) ----
-      const sumDay = await prisma.metricsHourly.aggregate({
-        _sum: { pointsEarned: true },
-        where: {
-          hourUtc: { gte: dayStart, lt: dayEnd },
-          userId: GLOBAL_USER_ID,
-        },
-      });
-
-      await prisma.metricsDaily.upsert({
-        where: {
-          dayUtc_userId_unique: {
-            dayUtc: dayStart,
-            userId: GLOBAL_USER_ID,
-          },
-        },
-        create: {
-          dayUtc: dayStart,
-          userId: GLOBAL_USER_ID,
-          pointsEarned: sumDay._sum.pointsEarned ?? 0,
-        },
-        update: {
-          pointsEarned: sumDay._sum.pointsEarned ?? 0,
-        },
-      });
-
-      return { hour: hourStart.toISOString(), total };
+  // 1) System points this hour
+  const pointsAgg = await prisma.pointEvent.aggregate({
+    where: {
+      occurredAt: { gte: hourStart, lt: hourEnd },
     },
-    { connection }
-  );
+    _sum: { amount: true },
+  });
+  const systemPoints = pointsAgg._sum.amount ?? 0;
+
+  // 2) Bandwidth: from PointEvent.meta.downloadMbps where source="sharing"
+  //    We accept meta as Json and try to read downloadMbps as number.
+  const bwEvents = await prisma.pointEvent.findMany({
+    where: {
+      occurredAt: { gte: hourStart, lt: hourEnd },
+      source: "sharing",
+      meta: { not: null },
+    },
+    select: { meta: true },
+    take: 5000, // safety; adjust if you expect more
+  });
+
+  const bwValues: number[] = [];
+  for (const e of bwEvents) {
+    const mbps = (e.meta as any)?.downloadMbps;
+    if (typeof mbps === "number" && Number.isFinite(mbps) && mbps >= 0) {
+      bwValues.push(mbps);
+    }
+  }
+  const avgBandwidth = avg(bwValues);
+
+  // 3) Trust / region: from Node table
+  const nodes = await prisma.node.findMany({
+    select: { trustScore: true, region: true },
+  });
+
+  const trustValues = nodes
+    .map((n) => n.trustScore)
+    .filter((v): v is number => typeof v === "number" && Number.isFinite(v));
+
+  const avgTrust = trustValues.length ? trustValues.reduce((a, b) => a + b, 0) / trustValues.length : null;
+  const region = mostCommonString(nodes.map((n) => n.region));
+
+  // 4) QF score (simple v1):
+  //    - bandwidth percent vs MAX_MBPS
+  //    - trust percent = trustScore * 100
+  //    - qf = 50/50
+  const MAX_MBPS = 50; // adjust later if you want
+  const bwPct = avgBandwidth != null ? Math.min(100, (avgBandwidth / MAX_MBPS) * 100) : 0;
+  const trustPct = avgTrust != null ? Math.min(100, avgTrust * 100) : 0;
+
+  const qfScore = Math.round(0.5 * bwPct + 0.5 * trustPct);
+
+  // 5) Upsert SYSTEM MetricsHourly (userId = null)
+  await prisma.metricsHourly.upsert({
+    where: {
+      hourUtc_userId_unique: {
+        hourUtc: hourStart,
+        userId: null, // SYSTEM ROW
+      },
+    },
+    update: {
+      pointsEarned: systemPoints,
+      avgBandwidth: avgBandwidth,
+      trustScore: avgTrust,
+      qfScore: qfScore,
+      region: region,
+      // version: null, // optional
+    },
+    create: {
+      hourUtc: hourStart,
+      userId: null,
+      pointsEarned: systemPoints,
+      avgBandwidth: avgBandwidth,
+      trustScore: avgTrust,
+      qfScore: qfScore,
+      region: region,
+      // version: null, // optional
+    },
+  });
+
+  const out: RollupResult = {
+    hourUtc: hourStart.toISOString(),
+    pointsEarned: systemPoints,
+    avgBandwidth,
+    trustScore: avgTrust,
+    qfScore,
+    region,
+  };
+
+  // handy log for worker
+  console.log("[rollup-hourly][system]", out);
+
+  return out;
 }

@@ -1,63 +1,116 @@
-"use server";
-
+// server/rollup/rollup-hour.ts
 import { prisma } from "@/lib/prisma";
 
-function hourStartUTC(d: Date) {
-  const x = new Date(d);
-  x.setUTCMinutes(0, 0, 0);
-  return x;
+export type RollupHourResult = {
+  hourUtc: Date;
+  users: number;
+};
+
+// ปัดเวลาเป็นต้นชั่วโมง UTC
+function floorToUtcHour(d: Date): Date {
+  return new Date(
+    Date.UTC(
+      d.getUTCFullYear(),
+      d.getUTCMonth(),
+      d.getUTCDate(),
+      d.getUTCHours(),
+      0,
+      0,
+      0
+    )
+  );
 }
-function addHours(d: Date, h: number) {
-  const x = new Date(d);
-  x.setUTCHours(x.getUTCHours() + h);
-  return x;
-}
 
-const EARN_TYPES = [
-  "UPTIME_MINUTE",
-  "VERIFIER_BW",
-  "REFERRAL",
-  "BONUS",
-] as const;
+/**
+ * Rollup events -> MetricsHourly
+ *
+ * - รวมแต้มจาก PointEvent ภายในชั่วโมงนั้น (UTC) ต่อ user
+ * - upsert MetricsHourly (per user)
+ * - upsert MetricsHourly ของ system (userId = "system") สำหรับกราฟ global
+ *
+ * NOTE:
+ * - ใช้ occurredAt เป็นเวลาอีเวนต์จริง (ไม่ใช่ createdAt)
+ * - unique ต้องเป็น: hourUtc_userId_unique
+ */
+export async function rollupHourPoints(hourInput?: Date): Promise<RollupHourResult> {
+  const now = hourInput ? new Date(hourInput) : new Date();
+  const hourUtc = floorToUtcHour(now);
+  const nextHourUtc = new Date(hourUtc.getTime() + 60 * 60 * 1000);
 
-// พวกนี้เป็น “หักแต้ม” → ไม่ต้องเอามารวมเป็น pointsEarned (หรือถ้าคุณอยากให้เป็น net ก็รวมไปเลยได้)
-const DEBIT_TYPES = ["PENALTY", "CONVERT_DEBIT"] as const;
+  // ✅ นับแต้มที่เป็น "earn" จริง ๆ
+  // ถ้าจะนับทุกอย่างให้ลบเงื่อนไข type ออก
+  const EARN_TYPES = ["extension_farm", "UPTIME_MINUTE"] as const;
 
-export async function rollupHourPoints(hourUtc: Date) {
-  const start = hourStartUTC(hourUtc);
-  const end = addHours(start, 1);
-
-  // รวมคะแนนจาก PointEvent ในช่วงชั่วโมงนั้น (อิง occurredAt)
-  const agg = await prisma.pointEvent.groupBy({
-    by: ["userId"],
-    where: {
-      occurredAt: { gte: start, lt: end },
-      type: { in: [...EARN_TYPES] }, // <<<< จุดที่ “ผูก sharing events” แบบชัดเจน
-      // ถ้า sharing ใช้ type อื่น เช่น "SHARING_AWARD" ให้ใส่เพิ่มใน EARN_TYPES
-    },
-    _sum: { amount: true },
-  });
-
-  // upsert เข้า MetricsHourly โดย “อัปเดตแค่ pointsEarned”
-  for (const row of agg) {
-    const userId = row.userId;
-    const points = row._sum.amount ?? 0;
-
-    await prisma.metricsHourly.upsert({
+  const result = await prisma.$transaction(async (tx) => {
+    const perUser = await tx.pointEvent.groupBy({
+      by: ["userId"],
       where: {
-        hourUtc_userId_unique: { hourUtc: start, userId }, // <<<< ชื่อ unique ของคุณ
+        occurredAt: { gte: hourUtc, lt: nextHourUtc },
+        type: { in: [...EARN_TYPES] },
       },
+      _sum: { amount: true },
+    });
+
+    for (const u of perUser) {
+      const points = u._sum.amount ?? 0;
+
+      await tx.metricsHourly.upsert({
+        where: {
+          hourUtc_userId_unique: {
+            hourUtc,
+            userId: u.userId,
+          },
+        },
+        update: {
+          pointsEarned: points,
+        },
+        create: {
+          hourUtc,
+          userId: u.userId,
+          pointsEarned: points,
+
+          uptimePct: null,
+          avgBandwidth: null,
+          qfScore: null,
+          trustScore: null,
+
+          region: null,
+          version: null,
+        },
+      });
+    }
+
+    // ✅ system aggregate: ต้องเขียนทุกชั่วโมง แม้ total = 0
+    const totalPoints = perUser.reduce((s, x) => s + (x._sum.amount ?? 0), 0);
+
+    await tx.metricsHourly.upsert({
+      where: {
+        hourUtc_userId_unique: {
+          hourUtc,
+          userId: "system",
+        },
+      },
+      update: { pointsEarned: totalPoints },
       create: {
-        hourUtc: start,
-        userId,
-        pointsEarned: points,
-      },
-      update: {
-        pointsEarned: points,
-        // ไม่แตะ uptimePct/avgBandwidth/qf/trust เพื่อไม่ชนกับ rollup node-flow เดิม
+        hourUtc,
+        userId: "system",
+        pointsEarned: totalPoints,
+
+        uptimePct: null,
+        avgBandwidth: null,
+        qfScore: null,
+        trustScore: null,
+
+        region: null,
+        version: null,
       },
     });
-  }
 
-  return { hourUtc: start.toISOString(), users: agg.length };
+    return {
+      hourUtc,
+      users: perUser.length,
+    } satisfies RollupHourResult;
+  });
+
+  return result;
 }

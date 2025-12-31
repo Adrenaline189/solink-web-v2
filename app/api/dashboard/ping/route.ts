@@ -1,11 +1,141 @@
 // app/api/dashboard/ping/route.ts
 import { NextResponse } from "next/server";
+import { cookies } from "next/headers";
+import { prisma } from "@/lib/prisma";
+import { Prisma } from "@prisma/client";
+
+function getClientIp(req: Request) {
+  const xf = req.headers.get("x-forwarded-for");
+  if (xf) return xf.split(",")[0]?.trim() || null;
+  const xr = req.headers.get("x-real-ip");
+  if (xr) return xr.trim();
+  return null;
+}
+
+function asNumber(v: unknown): number | null {
+  const n = typeof v === "number" ? v : Number(v);
+  return Number.isFinite(n) ? n : null;
+}
 
 export async function GET(req: Request) {
-  // ตัวนี้ไม่ต้องทำอะไรเยอะ แค่ตอบ ok
-  // latency จะไปคำนวณฝั่ง browser จากเวลา round-trip
-  return NextResponse.json({
-    ok: true,
-    ts: Date.now(),
-  });
+  try {
+    const cookieStore = cookies();
+    const auth = cookieStore.get("solink_auth")?.value;
+    const wallet = cookieStore.get("solink_wallet")?.value?.trim();
+
+    if (!auth || !wallet) {
+      return NextResponse.json(
+        {
+          ok: false,
+          connected: false,
+          error: "Not authenticated",
+          region: null,
+          ip: getClientIp(req),
+          version: null,
+          latencyMs: null,
+          series: [],
+          serverTime: new Date().toISOString(),
+        },
+        { status: 401, headers: { "Cache-Control": "no-store" } }
+      );
+    }
+
+    const user = await prisma.user.findFirst({ where: { wallet } });
+    if (!user) {
+      return NextResponse.json(
+        {
+          ok: false,
+          connected: false,
+          error: "User not found",
+          region: null,
+          ip: getClientIp(req),
+          version: null,
+          latencyMs: null,
+          series: [],
+          serverTime: new Date().toISOString(),
+        },
+        { status: 404, headers: { "Cache-Control": "no-store" } }
+      );
+    }
+
+    // เลือก node ล่าสุดที่มี region ก่อน (กันเคส node ใหม่ยังไม่ได้ใส่ region)
+    const nodeWithRegion = await prisma.node.findFirst({
+      where: { userId: user.id, region: { not: null } },
+      orderBy: { updatedAt: "desc" },
+      select: { id: true, region: true },
+    });
+
+    const nodeAny = nodeWithRegion
+      ? nodeWithRegion
+      : await prisma.node.findFirst({
+          where: { userId: user.id },
+          orderBy: { updatedAt: "desc" },
+          select: { id: true, region: true },
+        });
+
+    // latest MetricsHourly (เอา version/region fallback)
+    const mh = await prisma.metricsHourly.findFirst({
+      where: { userId: user.id },
+      orderBy: { hourUtc: "desc" },
+      select: { version: true, region: true },
+    });
+
+    const region = nodeAny?.region ?? mh?.region ?? null;
+    const version = mh?.version ?? null;
+
+    // latency series จาก PointEvent.meta.latencyMs (ล่าสุด ~60 จุด)
+    // ✅ Prisma Json filter: ใช้ AnyNull เพื่อกันทั้ง DbNull/JsonNull
+    const evs = await prisma.pointEvent.findMany({
+      where: {
+        userId: user.id,
+        source: "sharing",
+        meta: { not: Prisma.AnyNull },
+      },
+      orderBy: { occurredAt: "desc" },
+      take: 60,
+      select: { occurredAt: true, meta: true },
+    });
+
+    const series = evs
+      .map((e) => {
+        const meta = (e.meta ?? {}) as Record<string, unknown>;
+        const latencyMs = asNumber((meta as any).latencyMs);
+        if (latencyMs == null) return null;
+        return { ts: e.occurredAt.toISOString(), latencyMs };
+      })
+      .filter((x): x is { ts: string; latencyMs: number } => !!x)
+      .reverse();
+
+    const latencyMs = series.length ? series[series.length - 1].latencyMs : null;
+
+    return NextResponse.json(
+      {
+        ok: true,
+        connected: true,
+        region,
+        ip: getClientIp(req),
+        version,
+        latencyMs,
+        series,
+        serverTime: new Date().toISOString(),
+      },
+      { status: 200, headers: { "Cache-Control": "no-store" } }
+    );
+  } catch (e: any) {
+    console.error("[dashboard/ping] error:", e);
+    return NextResponse.json(
+      {
+        ok: false,
+        connected: false,
+        error: e?.message || "Internal server error",
+        region: null,
+        ip: null,
+        version: null,
+        latencyMs: null,
+        series: [],
+        serverTime: new Date().toISOString(),
+      },
+      { status: 500, headers: { "Cache-Control": "no-store" } }
+    );
+  }
 }
