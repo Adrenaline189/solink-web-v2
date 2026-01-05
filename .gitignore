@@ -38,3 +38,7 @@ scripts/dev-*
 scripts/inspect-*
 scripts/check-*
 scripts/seed-*
+.vercel
+# generated / static pdf
+app/whitepaper.pdf/
+
