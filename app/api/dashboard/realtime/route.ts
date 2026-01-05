@@ -1,96 +1,74 @@
 // app/api/dashboard/realtime/route.ts
-import { NextResponse } from "next/server";
-import { cookies } from "next/headers";
+import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getAuthContext } from "@/lib/auth";
 
-export const dynamic = "force-dynamic";
-export const revalidate = 0;
-
-function floorUtcDay(d: Date) {
-  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+function startOfUtcDay(d: Date): Date {
+  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 0, 0, 0, 0));
 }
 
-export async function GET() {
-  const store = cookies();
-  const wallet = store.get("solink_wallet")?.value;
-  const auth = store.get("solink_auth")?.value;
+// ✅ Earn types only
+const EARN_TYPES = ["extension_farm", "UPTIME_MINUTE", "referral", "referral_bonus"] as const;
 
-  if (!wallet || !auth) {
-    return NextResponse.json(
-      {
-        ok: false,
-        error: "Not authenticated",
-        pointsToday: 0,
-        livePoints: 0,
-        rolledPoints: 0,
-        dayUtc: floorUtcDay(new Date()).toISOString(),
-        serverTime: new Date().toISOString(),
+export async function GET(req: NextRequest) {
+  try {
+    const ctx = await getAuthContext(req);
+    if (!ctx?.wallet) {
+      return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+    }
+
+    const user = await prisma.user.findFirst({ where: { wallet: ctx.wallet } });
+    if (!user) {
+      return NextResponse.json({ ok: false, error: "User not found" }, { status: 404 });
+    }
+
+    const now = new Date();
+    const dayStart = startOfUtcDay(now);
+    const dayEnd = new Date(dayStart.getTime() + 24 * 60 * 60 * 1000);
+
+    // 1) earned today (live) from PointEvent (earn only)
+    const earnedAgg = await prisma.pointEvent.aggregate({
+      where: {
+        userId: user.id,
+        occurredAt: { gte: dayStart, lt: dayEnd },
+        type: { in: [...EARN_TYPES] },
+        amount: { gt: 0 },
       },
-      {
-        status: 401,
-        headers: { "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate" },
-      }
-    );
-  }
+      _sum: { amount: true },
+    });
 
-  const user = await prisma.user.findFirst({ where: { wallet } });
-  if (!user) {
-    return NextResponse.json(
-      {
-        ok: false,
-        error: "User not found",
-        pointsToday: 0,
-        livePoints: 0,
-        rolledPoints: 0,
-        wallet,
-        dayUtc: floorUtcDay(new Date()).toISOString(),
-        serverTime: new Date().toISOString(),
-      },
-      {
-        status: 404,
-        headers: { "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate" },
-      }
-    );
-  }
+    const earnedTodayRaw = earnedAgg._sum.amount ?? 0;
+    const earnedToday = Number.isFinite(earnedTodayRaw) ? Math.max(0, earnedTodayRaw) : 0;
 
-  const now = new Date();
-  const dayStartUtc = floorUtcDay(now);
-  const dayEndUtc = new Date(dayStartUtc.getTime() + 24 * 60 * 60 * 1000);
+    // 2) rolled today from MetricsDaily (if exists)
+    const rolledRow = await prisma.metricsDaily.findFirst({
+      where: { userId: user.id, dayUtc: dayStart },
+      select: { pointsEarned: true },
+    });
 
-  // 1) realtime events (วันนี้ UTC)
-  const live = await prisma.pointEvent.aggregate({
-    where: {
-      userId: user.id,
-      occurredAt: { gte: dayStartUtc, lt: dayEndUtc },
-    },
-    _sum: { amount: true },
-  });
+    const rolledRaw = rolledRow?.pointsEarned ?? 0;
+    const rolledPoints = Number.isFinite(rolledRaw) ? Math.max(0, rolledRaw) : 0;
 
-  // 2) hourly rollup (วันนี้ UTC)
-  const hourly = await prisma.metricsHourly.aggregate({
-    where: {
-      userId: user.id,
-      hourUtc: { gte: dayStartUtc, lt: dayEndUtc },
-    },
-    _sum: { pointsEarned: true },
-  });
+    // 3) livePoints = earned - rolled (clamp)
+    const livePoints = Math.max(0, earnedToday - rolledPoints);
 
-  const livePoints = live._sum.amount ?? 0;
-  const rolledPoints = hourly._sum.pointsEarned ?? 0;
+    // 4) pointsToday = rolled + live
+    const pointsToday = rolledPoints + livePoints;
 
-  return NextResponse.json(
-    {
+    return NextResponse.json({
       ok: true,
-      pointsToday: Math.max(livePoints, rolledPoints),
+      wallet: ctx.wallet,
+      userId: user.id,
+      dayUtc: dayStart.toISOString(),
+      pointsToday,
       livePoints,
       rolledPoints,
-      wallet,
-      userId: user.id,
-      dayUtc: dayStartUtc.toISOString(),
-      serverTime: now.toISOString(),
-    },
-    {
-      headers: { "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate" },
-    }
-  );
+    });
+  } catch (e: any) {
+    console.error("realtime error:", e);
+    return NextResponse.json(
+      { ok: false, error: e?.message ?? "internal error" },
+      { status: 500 }
+    );
+  }
 }

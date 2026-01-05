@@ -1,135 +1,81 @@
 // app/api/dashboard/user-daily/route.ts
-import { NextResponse } from "next/server";
-import { cookies } from "next/headers";
+import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getAuthContext } from "@/lib/auth";
 
-function floorUtcDay(d: Date) {
-  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+function startOfUtcDay(d: Date) {
+  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 0, 0, 0, 0));
 }
 
-function addDaysUtc(d: Date, days: number) {
-  return new Date(d.getTime() + days * 24 * 60 * 60 * 1000);
+function daysForRange(range: string) {
+  if (range === "7d") return 7;
+  if (range === "30d") return 30;
+  return 1; // today
 }
 
-function fmtDayLabel(d: Date) {
-  // YYYY-MM-DD (UTC)
-  const y = d.getUTCFullYear();
-  const m = String(d.getUTCMonth() + 1).padStart(2, "0");
-  const dd = String(d.getUTCDate()).padStart(2, "0");
-  return `${y}-${m}-${dd}`;
+function clamp0(n: any) {
+  const v = Number(n ?? 0);
+  return Number.isFinite(v) ? Math.max(0, v) : 0;
 }
 
-function getRange(q: string | null): "today" | "7d" | "30d" {
-  if (q === "7d" || q === "30d") return q;
-  return "today";
-}
+type DailyPoint = { dayUtc: string; points: number };
 
-export async function GET(req: Request) {
-  const url = new URL(req.url);
-  const range = getRange(url.searchParams.get("range"));
+export async function GET(req: NextRequest) {
+  try {
+    const url = new URL(req.url);
+    const range = (url.searchParams.get("range") || "today").toLowerCase();
 
-  const store = cookies();
-  const wallet = store.get("solink_wallet")?.value;
-  const auth = store.get("solink_auth")?.value;
+    const ctx = await getAuthContext(req);
+    if (!ctx?.wallet) {
+      return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+    }
 
-  if (!wallet || !auth) {
-    return NextResponse.json(
-      { ok: false, error: "Not authenticated", items: [] },
-      { status: 401, headers: { "Cache-Control": "no-store" } }
-    );
-  }
+    const user = await prisma.user.findFirst({ where: { wallet: ctx.wallet } });
+    if (!user) {
+      return NextResponse.json({ ok: false, error: "User not found" }, { status: 404 });
+    }
 
-  const user = await prisma.user.findFirst({ where: { wallet } });
-  if (!user) {
-    return NextResponse.json(
-      { ok: false, error: "User not found", items: [] },
-      { status: 404, headers: { "Cache-Control": "no-store" } }
-    );
-  }
+    const now = new Date();
+    const dayStart = startOfUtcDay(now);
+    const dayEnd = new Date(dayStart.getTime() + 24 * 60 * 60 * 1000);
 
-  const now = new Date();
-  const day0 = floorUtcDay(now);
+    const days = daysForRange(range);
+    const rangeStart =
+      range === "today" ? dayStart : new Date(dayStart.getTime() - (days - 1) * 24 * 60 * 60 * 1000);
 
-  let startUtc: Date;
-  let endUtc: Date;
-  let daysCount: number;
-
-  if (range === "today") {
-    startUtc = day0;
-    endUtc = addDaysUtc(day0, 1);
-    daysCount = 1;
-  } else if (range === "7d") {
-    startUtc = addDaysUtc(day0, -6);
-    endUtc = addDaysUtc(day0, 1);
-    daysCount = 7;
-  } else {
-    startUtc = addDaysUtc(day0, -29);
-    endUtc = addDaysUtc(day0, 1);
-    daysCount = 30;
-  }
-
-  // ✅ TODAY: ใช้ PointEvent สด → ให้กราฟวันนี้มีค่าแน่นอน
-  if (range === "today") {
-    const agg = await prisma.pointEvent.aggregate({
+    const rows = await prisma.metricsDaily.findMany({
       where: {
         userId: user.id,
-        occurredAt: { gte: startUtc, lt: endUtc },
+        dayUtc: { gte: rangeStart, lt: dayEnd },
       },
-      _sum: { amount: true },
+      select: { dayUtc: true, pointsEarned: true },
+      orderBy: { dayUtc: "asc" },
+      take: days,
     });
 
-    const points = agg._sum.amount ?? 0;
+    const m = new Map<string, number>();
+    for (const r of rows) {
+      m.set(r.dayUtc.toISOString(), clamp0(r.pointsEarned));
+    }
+
+    const series: DailyPoint[] = [];
+    for (let i = 0; i < days; i++) {
+      const d = new Date(rangeStart.getTime() + i * 24 * 60 * 60 * 1000);
+      const key = d.toISOString();
+      series.push({ dayUtc: key, points: clamp0(m.get(key) ?? 0) });
+    }
+
+    const todayTotal = clamp0(series[series.length - 1]?.points ?? 0);
 
     return NextResponse.json(
-      {
-        ok: true,
-        range,
-        startUtc: startUtc.toISOString(),
-        endUtc: endUtc.toISOString(),
-        items: [
-          {
-            dayUtc: startUtc.toISOString(),
-            label: fmtDayLabel(startUtc),
-            points,
-          },
-        ],
-      },
-      { headers: { "Cache-Control": "no-store" } }
+      { ok: true, range, tz: "UTC", todayTotal, series },
+      { status: 200, headers: { "Cache-Control": "no-store" } }
+    );
+  } catch (e: any) {
+    console.error("[dashboard/user-daily] error:", e);
+    return NextResponse.json(
+      { ok: false, error: e?.message ?? "Internal server error" },
+      { status: 500, headers: { "Cache-Control": "no-store" } }
     );
   }
-
-  // 7d/30d: ใช้ MetricsDaily (rollup) ตามเดิม
-  const rows = await prisma.metricsDaily.findMany({
-    where: {
-      userId: user.id,
-      dayUtc: { gte: startUtc, lt: endUtc },
-    },
-    orderBy: { dayUtc: "asc" },
-    select: { dayUtc: true, pointsEarned: true },
-  });
-
-  // เติมวันให้ครบ (ถ้าวันไหนไม่มีแถว ให้เป็น 0)
-  const map = new Map<string, number>();
-  for (const r of rows) map.set(fmtDayLabel(r.dayUtc), r.pointsEarned ?? 0);
-
-  const items = Array.from({ length: daysCount }, (_, i) => {
-    const d = addDaysUtc(startUtc, i);
-    const label = fmtDayLabel(d);
-    return {
-      dayUtc: d.toISOString(),
-      label,
-      points: map.get(label) ?? 0,
-    };
-  });
-
-  return NextResponse.json(
-    {
-      ok: true,
-      range,
-      startUtc: startUtc.toISOString(),
-      endUtc: endUtc.toISOString(),
-      items,
-    },
-    { headers: { "Cache-Control": "no-store" } }
-  );
 }

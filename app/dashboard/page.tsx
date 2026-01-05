@@ -16,7 +16,7 @@ const WalletMultiButton = NextDynamic(
 
 import React, { Suspense, useEffect, useState, useCallback, useMemo } from "react";
 export const dynamic = "force-dynamic";
-
+import { formatBandwidth } from "@/lib/format";
 import { Card, CardContent } from "../../components/ui/card";
 import { Button } from "../../components/ui/button";
 import {
@@ -31,6 +31,7 @@ import {
 } from "lucide-react";
 
 import { fetchHourly, fetchRealtime, fetchTransactions } from "../../lib/data/dashboard";
+
 
 import HourlyPoints from "../../components/charts/HourlyPoints";
 import { useWallet } from "@solana/wallet-adapter-react";
@@ -367,33 +368,67 @@ function DashboardInner() {
   }, [loadSystemMetrics, range]);
 
   /* System Daily (GLOBAL) จาก /api/dashboard/system-daily */
-  const loadSystemDaily = useCallback(async (r: DashboardRange, signal?: AbortSignal) => {
-    try {
-      setSysDailyLoading(true);
-      const res = await fetch(`/api/dashboard/system-daily?range=${r}`, {
-        cache: "no-store",
-        signal,
-        credentials: "include",
-      });
-      if (!res.ok) throw new Error("Failed to fetch /api/dashboard/system-daily");
-      const json: SystemDailyResp = await res.json();
-      const series =
-        json.days?.map((d) => ({
-          label: d.label,
-          points: d.pointsEarned,
-        })) ?? [];
-      setSysDailySeries(series);
-      setSysDailyTotal(json.totalPoints ?? 0);
-      setSysDailyError(null);
-    } catch (e: any) {
-      console.error("system-daily error:", e);
-      setSysDailyError(e?.message || "Failed to fetch system daily stats");
-      setSysDailySeries([]);
-      setSysDailyTotal(0);
-    } finally {
-      setSysDailyLoading(false);
-    }
-  }, []);
+const loadSystemDaily = useCallback(async (r: DashboardRange, signal?: AbortSignal) => {
+  try {
+    setSysDailyLoading(true);
+    const res = await fetch(`/api/dashboard/system-daily?range=${r}`, {
+      cache: "no-store",
+      signal,
+      credentials: "include",
+    });
+    if (!res.ok) throw new Error("Failed to fetch /api/dashboard/system-daily");
+
+    const json: any = await res.json();
+
+    // ✅ รองรับหลาย format: days (เก่า) / series (ใหม่) / daily (compat)
+    const src =
+      (Array.isArray(json?.days) && json.days) ||
+      (Array.isArray(json?.series) && json.series) ||
+      (Array.isArray(json?.daily) && json.daily) ||
+      [];
+
+    const series = src
+      .map((d: any) => {
+        // days format (เก่า): { label, pointsEarned }
+        if (typeof d?.label === "string") {
+          const pts =
+            typeof d?.pointsEarned === "number" ? d.pointsEarned : Number(d?.pointsEarned ?? 0);
+          return { label: d.label, points: Number.isFinite(pts) ? pts : 0 };
+        }
+
+        // series/daily format (ใหม่): { dayUtc, points } หรือ { dayUtc, pointsEarned }
+        const dayUtc = typeof d?.dayUtc === "string" ? d.dayUtc : null;
+        if (!dayUtc) return null;
+
+        const ptsRaw =
+          d?.points != null ? d.points : d?.pointsEarned != null ? d.pointsEarned : 0;
+
+        const pts = typeof ptsRaw === "number" ? ptsRaw : Number(ptsRaw);
+        const label = dayUtc.slice(0, 10); // YYYY-MM-DD
+
+        return { label, points: Number.isFinite(pts) ? pts : 0 };
+      })
+      .filter(Boolean) as Array<{ label: string; points: number }>;
+
+    // เรียงวันกันหลุด (กัน API/DB ส่งไม่เรียง)
+    series.sort((a, b) => a.label.localeCompare(b.label));
+
+    // total
+    const total = series.reduce((s, x) => s + (x.points ?? 0), 0);
+
+    setSysDailySeries(series);
+    setSysDailyTotal(total);
+    setSysDailyError(null);
+  } catch (e: any) {
+    console.error("system-daily error:", e);
+    setSysDailyError(e?.message || "Failed to fetch system daily stats");
+    setSysDailySeries([]);
+    setSysDailyTotal(0);
+  } finally {
+    setSysDailyLoading(false);
+  }
+}, []);
+
 
   // โหลด System Daily เมื่อ range เปลี่ยน
   useEffect(() => {
@@ -452,7 +487,14 @@ function DashboardInner() {
           throw new Error(json?.error || "Failed to load user daily points");
         }
         if (!cancelled) {
-          setUserDaily(json.items ?? []);
+          const arr =
+  (Array.isArray(json?.items) && json.items) ||
+  (Array.isArray(json?.series) && json.series) ||
+  (Array.isArray(json?.daily) && json.daily) ||
+  [];
+
+setUserDaily(arr);
+
         }
       } catch (e: any) {
         console.error("user-daily fetch error:", e);
@@ -872,12 +914,13 @@ function DashboardInner() {
 />
 
           <KPI
-            title="Average Bandwidth"
-            value={summary ? `${summary.avgBandwidthMbps} Mbps` : "—"}
-            sub="Last 15 minutes"
-            icon={<Cloud className="h-5 w-5" />}
-            loading={loading}
-          />
+  title="Average Bandwidth"
+  value={summary ? formatBandwidth(summary.avgBandwidthMbps, prefs.units, 3) : "—"}
+  sub="Last 15 minutes"
+  icon={<Cloud className="h-5 w-5" />}
+  loading={loading}
+/>
+
         </div>
 
         {/* Charts + Quality Panel */}
@@ -999,16 +1042,19 @@ function DashboardInner() {
                       <XAxis dataKey="label" tick={{ fontSize: 10 }} />
                       <YAxis allowDecimals={false} />
                       <Tooltip
-                        contentStyle={{
-                          backgroundColor: "rgba(15,23,42,0.96)",
-                          border: "1px solid rgba(148,163,184,0.5)",
-                          borderRadius: 12,
-                          padding: "8px 10px",
-                        }}
-                        labelStyle={{ color: "#e5e7eb", fontSize: 12 }}
-                        itemStyle={{ color: "#22c55e", fontSize: 12 }}
-                        formatter={(v: number) => [`${v.toLocaleString()} pts`, "System daily"]}
-                      />
+  cursor={false} // ✅ ปิดแถบเทา/ขาวที่ตามเมาส์
+  contentStyle={{
+    backgroundColor: "rgba(15,23,42,0.96)",
+    border: "1px solid rgba(148,163,184,0.5)",
+    borderRadius: 12,
+    padding: "8px 10px",
+  }}
+  labelStyle={{ color: "#e5e7eb", fontSize: 12 }}
+  itemStyle={{ color: "#22c55e", fontSize: 12 }}
+  formatter={(v: number) => [`${v.toLocaleString()} pts`, "System daily"]}
+/>
+
+
                       <Bar dataKey="points" radius={[6, 6, 0, 0]} fill="#22c55e" />
                     </BarChart>
                   </ResponsiveContainer>

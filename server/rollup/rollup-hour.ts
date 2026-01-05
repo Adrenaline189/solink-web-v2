@@ -1,5 +1,6 @@
 // server/rollup/rollup-hour.ts
 import { prisma } from "@/lib/prisma";
+import { EARN_TYPES } from "@/lib/points";
 
 export type RollupHourResult = {
   hourUtc: Date;
@@ -24,22 +25,14 @@ function floorToUtcHour(d: Date): Date {
 /**
  * Rollup events -> MetricsHourly
  *
- * - รวมแต้มจาก PointEvent ภายในชั่วโมงนั้น (UTC) ต่อ user
- * - upsert MetricsHourly (per user)
- * - upsert MetricsHourly ของ system (userId = "system") สำหรับกราฟ global
- *
- * NOTE:
- * - ใช้ occurredAt เป็นเวลาอีเวนต์จริง (ไม่ใช่ createdAt)
- * - unique ต้องเป็น: hourUtc_userId_unique
+ * IMPORTANT:
+ * - Rollup นี้ต้องสะท้อน "EARNED points" เท่านั้น (ไม่รวมการหักแต้ม เช่น convert_debit)
+ * - กันกรณีข้อมูลหลุดติดลบ: amount > 0 และ clamp ไม่ต่ำกว่า 0
  */
 export async function rollupHourPoints(hourInput?: Date): Promise<RollupHourResult> {
   const now = hourInput ? new Date(hourInput) : new Date();
   const hourUtc = floorToUtcHour(now);
   const nextHourUtc = new Date(hourUtc.getTime() + 60 * 60 * 1000);
-
-  // ✅ นับแต้มที่เป็น "earn" จริง ๆ
-  // ถ้าจะนับทุกอย่างให้ลบเงื่อนไข type ออก
-  const EARN_TYPES = ["extension_farm", "UPTIME_MINUTE"] as const;
 
   const result = await prisma.$transaction(async (tx) => {
     const perUser = await tx.pointEvent.groupBy({
@@ -47,12 +40,14 @@ export async function rollupHourPoints(hourInput?: Date): Promise<RollupHourResu
       where: {
         occurredAt: { gte: hourUtc, lt: nextHourUtc },
         type: { in: [...EARN_TYPES] },
+        amount: { gt: 0 }, // ✅ กันติดลบตั้งแต่ต้นทาง
       },
       _sum: { amount: true },
     });
 
     for (const u of perUser) {
-      const points = u._sum.amount ?? 0;
+      const raw = u._sum.amount ?? 0;
+      const points = Number.isFinite(raw) ? Math.max(0, raw) : 0;
 
       await tx.metricsHourly.upsert({
         where: {
@@ -80,8 +75,9 @@ export async function rollupHourPoints(hourInput?: Date): Promise<RollupHourResu
       });
     }
 
-    // ✅ system aggregate: ต้องเขียนทุกชั่วโมง แม้ total = 0
-    const totalPoints = perUser.reduce((s, x) => s + (x._sum.amount ?? 0), 0);
+    // system aggregate: เขียนทุกชั่วโมง แม้ total = 0
+    const totalRaw = perUser.reduce((s, x) => s + (x._sum.amount ?? 0), 0);
+    const totalPoints = Number.isFinite(totalRaw) ? Math.max(0, totalRaw) : 0;
 
     await tx.metricsHourly.upsert({
       where: {

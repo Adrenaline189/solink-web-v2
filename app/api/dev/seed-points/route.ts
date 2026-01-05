@@ -1,64 +1,92 @@
 // app/api/dev/seed-points/route.ts
-import { NextResponse } from "next/server";
-import { cookies } from "next/headers";
+import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { requireApiKey } from "@/lib/auth";
+import crypto from "crypto";
 
-export const dynamic = "force-dynamic";
-export const revalidate = 0;
+type Body = {
+  wallet?: string;
+  amount?: number;
+  type?: string; // optional override event type
+};
 
-export async function POST(req: Request) {
+function bad(msg: string, status = 400) {
+  return NextResponse.json({ ok: false, error: msg }, { status });
+}
+
+export async function POST(req: NextRequest) {
   try {
-    const store = cookies();
-    const wallet = store.get("solink_wallet")?.value;
-    const auth = store.get("solink_auth")?.value;
+    // ✅ auth ด้วย API_KEY (ไม่ใช้ cookie)
+    requireApiKey(req);
 
-    if (!wallet || !auth) {
-      return NextResponse.json({ ok: false, error: "Not authenticated" }, { status: 401 });
-    }
+    const body = (await req.json().catch(() => ({}))) as Body;
 
-    const body = await req.json().catch(() => ({}));
-    const amount = Number(body?.amount ?? 100);
+    const wallet = (body.wallet || "").trim();
+    const amount = Number(body.amount);
 
-    if (!Number.isFinite(amount) || amount <= 0) {
-      return NextResponse.json({ ok: false, error: "amount must be > 0" }, { status: 400 });
-    }
+    if (!wallet) return bad("wallet is required", 400);
+    if (!Number.isFinite(amount) || amount <= 0)
+      return bad("amount must be a positive number", 400);
 
-    const user = await prisma.user.findFirst({ where: { wallet } });
+    // default earn type (อย่าใช้ type debit)
+    const type = (body.type || "extension_farm").trim();
+
+    // ✅ หา userId จริง (FK) จาก wallet
+    const user = await prisma.user.findFirst({
+      where: { wallet },
+      select: { id: true, wallet: true },
+    });
+
     if (!user) {
-      return NextResponse.json({ ok: false, error: "User not found" }, { status: 404 });
+      // กัน FK พัง + บอกทางแก้
+      return bad(
+        `User not found for wallet. Please login once to create user record (wallet=${wallet}).`,
+        404
+      );
     }
 
-    const ts = Date.now();
-    const dedupeKey = `DEV_SEED:${user.id}:${ts}:${amount}`;
+    const now = new Date();
+
+    // ✅ required fields ตาม schema ของ PointEvent
+    const dedupeKey = `dev_seed:${user.id}:${now.toISOString()}:${crypto.randomUUID()}`;
 
     const ev = await prisma.pointEvent.create({
       data: {
-        userId: user.id,
-        amount: Math.trunc(amount),
+        userId: user.id, // ✅ ใช้ User.id เท่านั้น
+        type,
+        amount,
+        occurredAt: now,
 
-        type: "UPTIME_MINUTE", // ใช้ enum string ที่คุณคอมเมนต์ไว้ก็ได้
-        source: "dev",
-        ruleVersion: "1",
-
-        dedupeKey,
-        occurredAt: new Date(),
+        source: "dev_seed",
+        ruleVersion: "1", // schema เป็น string
+        createdAt: now,
+        dedupeKey, // REQUIRED
+      },
+      select: {
+        id: true,
+        userId: true,
+        type: true,
+        amount: true,
+        occurredAt: true,
+        source: true,
+        ruleVersion: true,
+        dedupeKey: true,
       },
     });
 
-    return NextResponse.json(
-      {
-        ok: true,
-        eventId: ev.id,
-        userId: user.id,
-        wallet,
-        amount: ev.amount,
-        dedupeKey,
-        occurredAt: ev.occurredAt,
-      },
-      { headers: { "Cache-Control": "no-store" } }
-    );
+    // ✅ อัปเดต balance ให้เห็นผลทันที (ถ้า schema ตรง)
+    await prisma.pointBalance.upsert({
+      where: { userId: user.id },
+      update: { balance: { increment: amount } },
+      create: { userId: user.id, balance: amount, slk: 0 },
+    });
+
+    return NextResponse.json({ ok: true, user, event: ev });
   } catch (e: any) {
-    console.error("seed-points error:", e);
-    return NextResponse.json({ ok: false, error: e?.message || "seed failed" }, { status: 500 });
+    const status = e?.status ?? 500;
+    return NextResponse.json(
+      { ok: false, error: e?.message ?? "internal error" },
+      { status }
+    );
   }
 }

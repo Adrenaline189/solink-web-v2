@@ -1,114 +1,154 @@
 // app/api/contact/route.ts
 import { NextResponse } from "next/server";
+import { Resend } from "resend";
 
-export const runtime = "nodejs";
-export const dynamic = "force-dynamic";
+export const runtime = "nodejs"; // Resend ต้องใช้ node runtime (ห้าม edge)
 
-const MAX_LEN = { name: 100, email: 200, subject: 140, message: 5000 };
-const MIN_FILL_SECONDS = 3;
-const RATE_LIMIT_WINDOW = 60;
-const RATE_LIMIT_MAX = 5;
+type BodyA = {
+  name?: string;
+  email?: string;
+  subject?: string;
+  message?: string;
+  startedAt?: number; // anti-bot timing (optional)
+  hp?: string;        // honeypot (optional)
+};
 
-const buckets = new Map<string, { count: number; resetAt: number }>();
+type BodyB = {
+  name?: string;
+  email?: string;
+  message?: string;
+  website?: string;   // honeypot (optional)
+};
 
-function rateLimit(ip: string): boolean {
-  const now = Date.now();
-  const b = buckets.get(ip);
-  if (!b || now > b.resetAt) {
-    buckets.set(ip, { count: 1, resetAt: now + RATE_LIMIT_WINDOW * 1000 });
-    return true;
-  }
-  if (b.count >= RATE_LIMIT_MAX) return false;
-  b.count++;
-  return true;
+function isEmail(s: string) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s);
 }
 
-function isValidEmail(s: string) {
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s);
+function escapeHtml(input: string) {
+  return input
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
 }
 
 export async function POST(req: Request) {
   try {
-    const ip =
-      (req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
-        req.headers.get("x-real-ip") ||
-        "0.0.0.0");
+    const apiKey = process.env.RESEND_API_KEY;
 
-    if (!rateLimit(ip)) {
-      return NextResponse.json({ ok: false, error: "Too many requests" }, { status: 429 });
+    // ควรตั้งใน env ให้ชัดเจน
+    // CONTACT_TO_EMAIL=ir@solink.network
+    // CONTACT_FROM_EMAIL=contact@solink.network   <-- ต้องเป็นโดเมนที่ verify แล้ว
+    const to = (process.env.CONTACT_TO_EMAIL || "ir@solink.network").trim();
+    const from = (process.env.CONTACT_FROM_EMAIL || "contact@solink.network").trim();
+
+    if (!apiKey) {
+      return NextResponse.json(
+        { ok: false, error: "Missing RESEND_API_KEY in env" },
+        { status: 500 }
+      );
     }
 
-    const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
-    const name = String(body.name ?? "").trim();
-    const email = String(body.email ?? "").trim();
-    const subject = String(body.subject ?? "").trim();
-    const message = String(body.message ?? "").trim();
+    const raw = (await req.json().catch(() => ({}))) as (BodyA & BodyB);
 
-    // honeypot + timing (เฉพาะเมื่อ startedAt ส่งมาและเป็นตัวเลข)
-    const hp = String(body.hp ?? "");
-    const startedAtNum = Number(body.startedAt);
-    const hasTs = Number.isFinite(startedAtNum);
-    const tookMs = hasTs ? Date.now() - startedAtNum : Number.POSITIVE_INFINITY;
+    // รองรับทั้ง 2 ฟอร์ม
+    const name = (raw.name || "").trim();
+    const email = (raw.email || "").trim();
+    const subject = (raw.subject || "Contact request").trim();
+    const message = (raw.message || "").trim();
 
-    if (hp.length > 0 || (hasTs && tookMs < MIN_FILL_SECONDS * 1000)) {
-      return NextResponse.json({ ok: true }, { status: 202 });
+    // honeypot: มี 2 ชื่อ field (hp, website)
+    const honeypot = (raw.hp ?? raw.website ?? "").trim();
+
+    // anti-bot timing:
+    // - ถ้า client ส่ง startedAt มา ค่อยตรวจ "กรอกเร็วเกิน 1.2s"
+    // - ถ้าไม่ส่งมา ให้ข้ามกติกานี้ (ไม่งั้นจะ queued ตลอด)
+    const hasStartedAt = typeof raw.startedAt === "number" && Number.isFinite(raw.startedAt);
+    const startedAt = hasStartedAt ? (raw.startedAt as number) : null;
+    const elapsedMs = startedAt ? Date.now() - startedAt : null;
+
+    // ---- Basic validation ----
+    const errors: Record<string, string> = {};
+    if (!name) errors.name = "Name is required";
+    if (!email) errors.email = "Email is required";
+    else if (!isEmail(email)) errors.email = "Email is invalid";
+
+    // subject optional: validate เบา ๆ เฉพาะกรณีส่ง subject field มา
+    if (raw.subject !== undefined && subject.length < 2) errors.subject = "Subject is too short";
+
+    if (!message) errors.message = "Message is required";
+    if (message && message.length < 10) errors.message = "Message is too short";
+
+    if (Object.keys(errors).length) {
+      return NextResponse.json({ ok: false, error: "Validation failed", errors }, { status: 400 });
     }
 
-    if (!name || !email || !subject || !message) {
-      return NextResponse.json({ ok: false, error: "Missing fields" }, { status: 400 });
-    }
-    if (!isValidEmail(email)) {
-      return NextResponse.json({ ok: false, error: "Invalid email" }, { status: 400 });
-    }
-    if (
-      name.length > MAX_LEN.name ||
-      email.length > MAX_LEN.email ||
-      subject.length > MAX_LEN.subject ||
-      message.length > MAX_LEN.message
-    ) {
-      return NextResponse.json({ ok: false, error: "Content too long" }, { status: 400 });
+    // ---- Anti-bot rules ----
+    if (honeypot) {
+      // บอทมักกรอกช่องที่ซ่อนไว้
+      return NextResponse.json({ ok: true, queued: true }, { status: 202 });
     }
 
-    const {
-      MAIL_HOST,
-      MAIL_PORT,
-      MAIL_USER,
-      MAIL_PASS,
-      MAIL_FROM = "Solink IR <ir@solink.network>",
-    } = process.env as Record<string, string | undefined>;
-    const MAIL_TO = process.env.MAIL_TO ?? "ir@solink.network";
-
-    if (MAIL_HOST && MAIL_PORT && MAIL_USER && MAIL_PASS) {
-      const nodemailer = await import("nodemailer");
-      const transporter = nodemailer.createTransport({
-        host: MAIL_HOST,
-        port: Number(MAIL_PORT),
-        secure: Number(MAIL_PORT) === 465,
-        auth: { user: MAIL_USER, pass: MAIL_PASS },
-      });
-
-      const text =
-        `New contact from ${name} <${email}>\n` +
-        `Subject: ${subject}\n\n` +
-        `${message}\n\n` +
-        `IP: ${ip}\nUser-Agent: ${req.headers.get("user-agent") || "-"}`;
-
-      await transporter.sendMail({
-        from: MAIL_FROM,
-        to: MAIL_TO,
-        subject: `[Contact] ${subject}`,
-        replyTo: email,
-        text,
-      });
-
-      return NextResponse.json({ ok: true });
-    } else {
-      // ยังไม่ตั้งค่า SMTP — log preview ไว้เพื่อทดสอบ
-      console.log("[contact] preview", { name, email, subject, message, ip, to: MAIL_TO });
-      return NextResponse.json({ ok: true }, { status: 202 });
+    if (elapsedMs !== null && elapsedMs < 1200) {
+      // กรอกเร็วผิดปกติ (เฉพาะเมื่อ client ส่ง startedAt มาจริง)
+      return NextResponse.json({ ok: true, queued: true }, { status: 202 });
     }
-  } catch (e) {
-    console.error("[contact] error", e);
-    return NextResponse.json({ ok: false, error: "Server error" }, { status: 500 });
+
+    // ---- Email content ----
+    const resend = new Resend(apiKey);
+console.log("[contact] from=", from, "to=", to, "hasKey=", !!apiKey);
+
+    const safeName = escapeHtml(name);
+    const safeEmail = escapeHtml(email);
+    const safeSubject = escapeHtml(subject);
+    const safeMessage = escapeHtml(message).replaceAll("\n", "<br/>");
+
+    const html = `
+      <div style="font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto; line-height:1.6">
+        <h2 style="margin:0 0 12px">New contact message</h2>
+        <div style="padding:12px; border:1px solid #e5e7eb; border-radius:12px;">
+          <p style="margin:0 0 8px"><b>Name:</b> ${safeName}</p>
+          <p style="margin:0 0 8px"><b>Email:</b> ${safeEmail}</p>
+          <p style="margin:0 0 8px"><b>Subject:</b> ${safeSubject}</p>
+          <p style="margin:0"><b>Message:</b><br/>${safeMessage}</p>
+        </div>
+        <p style="margin:12px 0 0; color:#6b7280; font-size:12px">
+          Sent via Solink contact form
+        </p>
+      </div>
+    `.trim();
+
+    const text =
+      `New contact message\n\n` +
+      `Name: ${name}\n` +
+      `Email: ${email}\n` +
+      `Subject: ${subject}\n\n` +
+      `${message}\n`;
+
+    // สำคัญ: from ต้องเป็นอีเมลโดเมนที่ verify แล้ว เช่น contact@solink.network
+    // replyTo ใช้ camelCase (SDK รองรับ)
+    const result = await resend.emails.send({
+      from: `Solink Contact <${from}>`,
+      to,
+      replyTo: `${name} <${email}>`,
+      subject: `[Solink] ${subject}`,
+      html,
+      text,
+    });
+
+    if ((result as any)?.error) {
+      return NextResponse.json(
+        { ok: false, error: (result as any).error?.message || "Resend failed" },
+        { status: 502 }
+      );
+    }
+
+    return NextResponse.json({ ok: true }, { status: 200 });
+  } catch (e: any) {
+    return NextResponse.json(
+      { ok: false, error: e?.message || "Unknown error" },
+      { status: 500 }
+    );
   }
 }

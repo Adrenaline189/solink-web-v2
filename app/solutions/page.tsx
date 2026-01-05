@@ -2,19 +2,58 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import Reveal from "@/components/Reveal";
+import SeoJsonLd from "@/components/SeoJsonLd";
 
+/** ----------------------------- helpers (SSR) ----------------------------- */
+function getSiteUrl() {
+  const envBase = process.env.NEXT_PUBLIC_SITE_URL?.trim();
+  if (envBase) return envBase.replace(/\/$/, "");
+  const vercelUrl = process.env.VERCEL_URL?.trim();
+  if (vercelUrl) return `https://${vercelUrl.replace(/\/$/, "")}`;
+  return "https://www.solink.network";
+}
+
+/**
+ * Avoid hydration/caching surprises: keep label stable.
+ * Set NEXT_PUBLIC_DOCS_UPDATED="Jan 2, 2026" on deploy if you want a real date.
+ */
+function getUpdatedLabel() {
+  const v = process.env.NEXT_PUBLIC_DOCS_UPDATED?.trim();
+  return v && v.length > 0 ? v : "Public testnet";
+}
+
+const ROUTES = {
+  contact: "/contact",
+  pricing: "/pricing", // change if you don't have this page yet
+  product: "/product",
+  docs: "/resources",
+} as const;
+
+/** ----------------------------- Metadata (SSR) ----------------------------- */
 export const metadata: Metadata = {
+  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL || "https://www.solink.network"),
   title: "Solutions — Solink",
   description:
     "Real-world use cases, deployment patterns, and capabilities for distributed bandwidth with policy guardrails and fair rewards.",
+  alternates: { canonical: "/solutions" },
   robots: { index: true, follow: true },
+  openGraph: {
+    type: "website",
+    url: "/solutions",
+    title: "Solutions — Solink",
+    description:
+      "Real-world use cases, deployment patterns, and capabilities for distributed bandwidth with policy guardrails and fair rewards.",
+    siteName: "Solink",
+    images: [{ url: "/og.png", width: 1200, height: 630, alt: "Solink" }],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Solutions — Solink",
+    description:
+      "Real-world use cases, deployment patterns, and capabilities for distributed bandwidth with policy guardrails and fair rewards.",
+    images: ["/og.png"],
+  },
 };
-
-const UPDATED = new Date().toLocaleDateString("en-US", {
-  month: "short",
-  day: "numeric",
-  year: "numeric",
-});
 
 // --------------------- Content data (edit freely) ---------------------
 const USE_CASES: Array<{
@@ -71,7 +110,7 @@ const CAPABILITIES = [
 const FAQ = [
   {
     q: "How does Solink work?",
-    a: "End users opt in to share unused bandwidth via a lightweight client. Traffic is routed under your policies (geo/QoS), usage is measured transparently, and contributors earn points convertible to SLK.",
+    a: "End users opt in to share unused bandwidth via a lightweight client. Traffic is routed under your policies (geo/QoS), usage is measured transparently, and contributors earn points convertible to SLK under published rules.",
   },
   {
     q: "How do we control privacy and data residency?",
@@ -85,29 +124,70 @@ const FAQ = [
 
 // ------------------------------- Page ---------------------------------
 export default function SolutionsPage() {
+  const siteUrl = getSiteUrl();
+  const UPDATED = getUpdatedLabel();
+
+  const jsonLd = {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "WebPage",
+        name: "Solutions — Solink",
+        url: `${siteUrl}/solutions`,
+        description:
+          "Real-world use cases, deployment patterns, and capabilities for distributed bandwidth with policy guardrails and fair rewards.",
+        isPartOf: { "@type": "WebSite", name: "Solink", url: siteUrl },
+      },
+      {
+        "@type": "FAQPage",
+        mainEntity: FAQ.map((f) => ({
+          "@type": "Question",
+          name: f.q,
+          acceptedAnswer: { "@type": "Answer", text: f.a },
+        })),
+      },
+    ],
+  };
+
   return (
     <main className="mx-auto max-w-7xl px-6 py-16">
+      <SeoJsonLd data={jsonLd} />
+
       {/* Hero */}
       <Reveal>
         <header>
           <h1 className="text-4xl font-semibold tracking-tight text-white">Solutions</h1>
           <p className="mt-4 max-w-3xl text-slate-300">
             Configure policies, routes, and rewards to fit your stack. Solink extends your network
-            with real users’ nodes — with enterprise-grade control and transparent measurement.
+            with real users’ nodes—while keeping enterprise-grade controls and transparent measurement.
           </p>
-          <div className="mt-3 text-xs text-slate-400">Last updated: {UPDATED}</div>
+
+          <div className="mt-3 text-xs text-slate-400">Status: {UPDATED}</div>
+
           <div className="mt-6 flex flex-wrap gap-3">
             <Link
-              href="/contact"
+              href={ROUTES.contact}
               className="rounded-2xl bg-sky-600/90 hover:bg-sky-600 px-5 py-3 font-medium text-white"
             >
               Talk to us
             </Link>
             <Link
-              href="/pricing"
-              className="rounded-2xl border border-slate-700 px-5 py-3 hover:bg-slate-900/60"
+              href={ROUTES.pricing}
+              className="rounded-2xl border border-slate-700 px-5 py-3 hover:bg-slate-900/60 text-slate-200"
             >
               See pricing
+            </Link>
+            <Link
+              href={ROUTES.product}
+              className="rounded-2xl border border-slate-700 px-5 py-3 hover:bg-slate-900/60 text-slate-200"
+            >
+              Product overview
+            </Link>
+            <Link
+              href={ROUTES.docs}
+              className="rounded-2xl border border-slate-700 px-5 py-3 hover:bg-slate-900/60 text-slate-200"
+            >
+              Docs
             </Link>
           </div>
         </header>
@@ -126,14 +206,17 @@ export default function SolutionsPage() {
             <Reveal key={u.name} delay={0.06 * i}>
               <article className="rounded-2xl border border-slate-800 bg-slate-900/40 p-5">
                 <h3 className="text-lg font-medium text-white">{u.name}</h3>
+
                 <div className="mt-3 text-sm">
                   <div className="text-slate-400">Problem</div>
                   <p className="text-slate-300">{u.problem}</p>
                 </div>
+
                 <div className="mt-3 text-sm">
                   <div className="text-slate-400">Solution</div>
                   <p className="text-slate-300">{u.solution}</p>
                 </div>
+
                 <div className="mt-3 text-sm">
                   <div className="text-slate-400">Outcome</div>
                   <p className="text-slate-300">{u.outcome}</p>
@@ -194,21 +277,9 @@ export default function SolutionsPage() {
         </Reveal>
         <div className="mt-5 grid gap-4 md:grid-cols-3">
           {[
-            {
-              step: "1",
-              title: "Connect",
-              desc: "Users install a lightweight client and accept your policies.",
-            },
-            {
-              step: "2",
-              title: "Route",
-              desc: "Traffic follows geo/policy/QoS controls with verifiable usage logs.",
-            },
-            {
-              step: "3",
-              title: "Reward",
-              desc: "Points accrue by volume and quality (QF/Trust) and convert to SLK.",
-            },
+            { step: "1", title: "Connect", desc: "Users install a lightweight client and accept your policies." },
+            { step: "2", title: "Route", desc: "Traffic follows geo/policy/QoS controls with verifiable usage logs." },
+            { step: "3", title: "Reward", desc: "Points accrue by volume and quality (QF/Trust) and convert to SLK." },
           ].map((s, i) => (
             <Reveal key={s.step} delay={0.06 * i}>
               <div className="rounded-2xl border border-slate-800 bg-slate-900/40 p-5">
@@ -247,16 +318,16 @@ export default function SolutionsPage() {
                   We’ll tailor sample policies and a dashboard to your use case.
                 </div>
               </div>
-              <div className="flex gap-3">
+              <div className="flex flex-wrap gap-3">
                 <Link
-                  href="/contact"
+                  href={ROUTES.contact}
                   className="rounded-2xl bg-sky-600/90 hover:bg-sky-600 px-5 py-3 font-medium text-white"
                 >
                   Contact Sales
                 </Link>
                 <Link
-                  href="/pricing"
-                  className="rounded-2xl border border-slate-700 px-5 py-3 hover:bg-slate-900/60"
+                  href={ROUTES.pricing}
+                  className="rounded-2xl border border-slate-700 px-5 py-3 hover:bg-slate-900/60 text-slate-200"
                 >
                   Pricing
                 </Link>

@@ -1,7 +1,8 @@
 // app/api/dashboard/summary/route.ts
-import { NextResponse } from "next/server";
-import { cookies, headers } from "next/headers";
+import { NextRequest, NextResponse } from "next/server";
+import { headers } from "next/headers";
 import { prisma } from "@/lib/prisma";
+import { getAuthContext } from "@/lib/auth";
 
 function startOfUtcDay(d: Date) {
   return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 0, 0, 0, 0));
@@ -23,16 +24,17 @@ function clamp(n: number, a: number, b: number) {
   return Math.max(a, Math.min(b, n));
 }
 
-export async function GET(req: Request) {
+// ✅ นับเฉพาะ “แต้มที่ได้” (ไม่รวม convert_debit / debit อื่น ๆ)
+const EARN_TYPES = ["extension_farm", "UPTIME_MINUTE", "referral", "referral_bonus"] as const;
+
+export async function GET(req: NextRequest) {
   try {
     const url = new URL(req.url);
     const range = (url.searchParams.get("range") || "today").toLowerCase();
 
-    const cookieStore = cookies();
-    const auth = cookieStore.get("solink_auth")?.value;
-    const wallet = cookieStore.get("solink_wallet")?.value?.trim();
-
-    if (!auth || !wallet) {
+    // ✅ auth จาก cookie solink_auth (JWT)
+    const ctx = await getAuthContext(req);
+    if (!ctx?.wallet) {
       return NextResponse.json(
         {
           ok: false,
@@ -55,7 +57,8 @@ export async function GET(req: Request) {
       );
     }
 
-    const user = await prisma.user.findFirst({ where: { wallet } });
+    // ✅ หา user ก่อน แล้วใช้ user.id (กัน FK / กัน mismatch)
+    const user = await prisma.user.findFirst({ where: { wallet: ctx.wallet } });
     if (!user) {
       return NextResponse.json(
         { ok: false, error: "User not found" },
@@ -74,32 +77,36 @@ export async function GET(req: Request) {
         : new Date(startOfUtcDay(now).getTime() - (days - 1) * 24 * 60 * 60 * 1000);
 
     // --------------------------
-    // pointsToday (UTC today) จาก PointEvent
+    // ✅ pointsToday (UTC today) = earned only (ไม่รวม debit)
     // --------------------------
     const pointsTodayAgg = await prisma.pointEvent.aggregate({
       where: {
         userId: user.id,
         occurredAt: { gte: dayStart, lt: dayEnd },
+        type: { in: [...EARN_TYPES] },
+        amount: { gt: 0 },
       },
       _sum: { amount: true },
     });
-    const pointsToday = pointsTodayAgg._sum.amount ?? 0;
+
+    const pointsTodayRaw = pointsTodayAgg._sum.amount ?? 0;
+    const pointsToday = Number.isFinite(pointsTodayRaw) ? Math.max(0, pointsTodayRaw) : 0;
 
     // --------------------------
-    // totalPoints + slk จาก PointBalance (ถ้ามี)
+    // totalPoints + slk จาก PointBalance
     // --------------------------
     const bal = await prisma.pointBalance.findUnique({
       where: { userId: user.id },
       select: { balance: true, slk: true },
     });
 
-    const totalPoints = bal?.balance ?? 0;
-    const slk = bal?.slk ?? 0;
+    const totalPoints = Math.max(0, Number(bal?.balance ?? 0));
+    const slk = Math.max(0, Number(bal?.slk ?? 0));
 
     // --------------------------
     // avgBandwidthMbps
-    // today: ใช้ MetricsHourly ชั่วโมงปัจจุบัน -> fallback เฉลี่ยในวัน
-    // 7d/30d: เฉลี่ย MetricsDaily.avgBandwidth
+    // today: MetricsHourly ชั่วโมงปัจจุบัน -> fallback เฉลี่ยในวัน
+    // 7d/30d: เฉลี่ยจาก MetricsDaily.avgBandwidth
     // --------------------------
     let avgBandwidthMbps = 0;
 
@@ -130,13 +137,12 @@ export async function GET(req: Request) {
           take: 24,
         });
 
-        if (mhList.length) {
-          const nums = mhList
-            .map((x) => x.avgBandwidth)
-            .filter((x): x is number => typeof x === "number" && Number.isFinite(x));
-          if (nums.length) {
-            avgBandwidthMbps = nums.reduce((a, b) => a + b, 0) / nums.length;
-          }
+        const nums = mhList
+          .map((x) => x.avgBandwidth)
+          .filter((x): x is number => typeof x === "number" && Number.isFinite(x));
+
+        if (nums.length) {
+          avgBandwidthMbps = nums.reduce((a, b) => a + b, 0) / nums.length;
         }
       }
     } else {
@@ -151,18 +157,17 @@ export async function GET(req: Request) {
         take: days,
       });
 
-      if (md.length) {
-        const nums = md
-          .map((x) => x.avgBandwidth)
-          .filter((x): x is number => typeof x === "number" && Number.isFinite(x));
-        if (nums.length) {
-          avgBandwidthMbps = nums.reduce((a, b) => a + b, 0) / nums.length;
-        }
+      const nums = md
+        .map((x) => x.avgBandwidth)
+        .filter((x): x is number => typeof x === "number" && Number.isFinite(x));
+
+      if (nums.length) {
+        avgBandwidthMbps = nums.reduce((a, b) => a + b, 0) / nums.length;
       }
     }
 
     // --------------------------
-    // uptimeHours (เดิมของคุณ)
+    // uptimeHours
     // --------------------------
     const goalHours = 8;
 
@@ -171,18 +176,17 @@ export async function GET(req: Request) {
         userId: user.id,
         type: "UPTIME_MINUTE",
         occurredAt: { gte: dayStart, lt: dayEnd },
+        amount: { gt: 0 },
       },
       _sum: { amount: true },
     });
 
-    const uptimeMinutes = uptimeAgg._sum.amount ?? 0;
+    const uptimeMinutesRaw = uptimeAgg._sum.amount ?? 0;
+    const uptimeMinutes = Number.isFinite(uptimeMinutesRaw) ? Math.max(0, uptimeMinutesRaw) : 0;
     const uptimeHours = uptimeMinutes / 60;
 
     // --------------------------
-    // ✅ qf / trust / region / version
-    // - prefer: MetricsDaily ของ "วันนี้"
-    // - fallback: trust จาก Node.trustScore (0..1 -> 0..100)
-    // - fallback qf: สูตรเบาๆ จาก uptimePct + avgBandwidth
+    // qf / trust / region / version
     // --------------------------
     const mdToday = await prisma.metricsDaily.findUnique({
       where: {
@@ -207,8 +211,14 @@ export async function GET(req: Request) {
       select: { region: true, trustScore: true },
     });
 
-    const uptimePct = Number(mdToday?.uptimePct ?? 0);
-    const trustFromNode = node?.trustScore != null ? Number(node.trustScore) * 100 : 0;
+    const uptimePct = Number.isFinite(Number(mdToday?.uptimePct ?? 0))
+      ? Number(mdToday?.uptimePct ?? 0)
+      : 0;
+
+    const trustFromNode =
+      node?.trustScore != null && Number.isFinite(Number(node.trustScore))
+        ? Number(node.trustScore) * 100
+        : 0;
 
     const trust = clamp(
       Math.round(Number(mdToday?.trustScore ?? trustFromNode ?? 0)),
@@ -216,7 +226,6 @@ export async function GET(req: Request) {
       100
     );
 
-    // ถ้า metricsDaily.avgBandwidth มีค่า จะใช้มันเป็นฐาน QF ก่อน (เผื่อ summary avg เป็นคนละสูตร)
     const bwForQf = Number(
       mdToday?.avgBandwidth != null && Number.isFinite(mdToday.avgBandwidth)
         ? mdToday.avgBandwidth
@@ -234,7 +243,7 @@ export async function GET(req: Request) {
     const region = mdToday?.region ?? node?.region ?? null;
     const version = mdToday?.version ?? null;
 
-    // ip จาก headers (proxy friendly)
+    // ip จาก headers
     const h = headers();
     const ip =
       (h.get("x-forwarded-for")?.split(",")?.[0]?.trim() ?? null) || (h.get("x-real-ip") ?? null);

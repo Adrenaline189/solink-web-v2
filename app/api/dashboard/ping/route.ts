@@ -1,8 +1,8 @@
 // app/api/dashboard/ping/route.ts
-import { NextResponse } from "next/server";
-import { cookies } from "next/headers";
+import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@prisma/client";
+import { getAuthContext } from "@/lib/auth";
 
 function getClientIp(req: Request) {
   const xf = req.headers.get("x-forwarded-for");
@@ -17,13 +17,11 @@ function asNumber(v: unknown): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
-export async function GET(req: Request) {
+export async function GET(req: NextRequest) {
   try {
-    const cookieStore = cookies();
-    const auth = cookieStore.get("solink_auth")?.value;
-    const wallet = cookieStore.get("solink_wallet")?.value?.trim();
-
-    if (!auth || !wallet) {
+    // ✅ ใช้ auth จาก solink_auth (JWT) เป็นหลัก
+    const ctx = await getAuthContext(req);
+    if (!ctx?.wallet) {
       return NextResponse.json(
         {
           ok: false,
@@ -40,7 +38,7 @@ export async function GET(req: Request) {
       );
     }
 
-    const user = await prisma.user.findFirst({ where: { wallet } });
+    const user = await prisma.user.findFirst({ where: { wallet: ctx.wallet } });
     if (!user) {
       return NextResponse.json(
         {

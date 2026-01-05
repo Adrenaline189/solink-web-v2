@@ -21,11 +21,17 @@ function getRange(q: string | null): DashboardRange {
   return "today";
 }
 function hourKeyISO(d: Date) {
-  // normalize เป็น HH:00Z
   return new Date(
     Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), d.getUTCHours(), 0, 0, 0)
   ).toISOString();
 }
+function clamp0(n: number) {
+  return Number.isFinite(n) ? Math.max(0, n) : 0;
+}
+
+// ✅ นับเฉพาะแต้มที่ “ได้” จริง ๆ
+const EARN_TYPES = ["extension_farm", "UPTIME_MINUTE", "referral", "referral_bonus"] as const;
+const SYSTEM_USER_ID = "system";
 
 export async function GET(req: Request) {
   const url = new URL(req.url);
@@ -48,7 +54,6 @@ export async function GET(req: Request) {
     endUtc = addDaysUtc(day0, 1);
   }
 
-  // helper: สร้าง bucket ชั่วโมงให้ครบตั้งแต่ startUtc ถึง endUtc (ไม่รวม endUtc)
   const makeBuckets = () => {
     const out: Array<{ hourUtc: string; pointsEarned: number }> = [];
     const hours = Math.max(1, Math.round((endUtc.getTime() - startUtc.getTime()) / 3_600_000));
@@ -59,10 +64,14 @@ export async function GET(req: Request) {
     return out;
   };
 
-  // ✅ TODAY: live จาก PointEvent (รวมทุก user)
+  // ✅ TODAY: live จาก PointEvent (รวมทั้งระบบ) — เฉพาะ EARN
   if (range === "today") {
     const events = await prisma.pointEvent.findMany({
-      where: { occurredAt: { gte: startUtc, lt: endUtc } },
+      where: {
+        occurredAt: { gte: startUtc, lt: endUtc },
+        type: { in: [...EARN_TYPES] },
+        amount: { gt: 0 },
+      },
       select: { occurredAt: true, amount: true },
       orderBy: { occurredAt: "asc" },
     });
@@ -84,10 +93,10 @@ export async function GET(req: Request) {
 
     for (const ev of events) {
       const h = ev.occurredAt.getUTCHours();
-      if (h >= 0 && h < 24) buckets[h].pointsEarned += ev.amount ?? 0;
+      if (h >= 0 && h < 24) buckets[h].pointsEarned += clamp0(ev.amount ?? 0);
     }
 
-    const totalPoints = buckets.reduce((s, r) => s + (r.pointsEarned ?? 0), 0);
+    const totalPoints = buckets.reduce((s, r) => s + clamp0(r.pointsEarned ?? 0), 0);
 
     return NextResponse.json(
       {
@@ -97,18 +106,17 @@ export async function GET(req: Request) {
         endUtc: endUtc.toISOString(),
         totalPoints,
         hourly: buckets,
-        source: "live_point_event",
+        source: "live_point_event_earned_only",
       },
       { headers: { "Cache-Control": "no-store" } }
     );
   }
 
-  // ✅ 7d/30d: พยายามอ่าน rollup ก่อน (MetricsHourly global)
-  // รองรับทั้ง userId null และ ""
+  // ✅ 7d/30d: อ่าน rollup ก่อน (MetricsHourly global = userId "system")
   const rolled = await prisma.metricsHourly.findMany({
     where: {
       hourUtc: { gte: startUtc, lt: endUtc },
-      OR: [{ userId: null }, { userId: "" }],
+      userId: SYSTEM_USER_ID,
     },
     orderBy: { hourUtc: "asc" },
     select: { hourUtc: true, pointsEarned: true },
@@ -116,9 +124,8 @@ export async function GET(req: Request) {
 
   const buckets = makeBuckets();
   const map = new Map<string, number>();
-  for (const r of rolled) map.set(hourKeyISO(r.hourUtc), r.pointsEarned ?? 0);
+  for (const r of rolled) map.set(hourKeyISO(r.hourUtc), clamp0(r.pointsEarned ?? 0));
 
-  // merge rollup -> buckets
   let nonZero = 0;
   for (const b of buckets) {
     const v = map.get(b.hourUtc);
@@ -126,29 +133,31 @@ export async function GET(req: Request) {
     if (b.pointsEarned !== 0) nonZero++;
   }
 
-  // ถ้า rollup ว่าง/แทบไม่มี → fallback ไปคำนวณจาก PointEvent
-  // (ช่วยให้ 7d ขึ้นกราฟแม้ยังไม่ได้รัน rollup)
   const shouldFallback = rolled.length === 0 || nonZero === 0;
 
+  // fallback: คำนวณจาก PointEvent (earned only)
   if (shouldFallback) {
     const events = await prisma.pointEvent.findMany({
-      where: { occurredAt: { gte: startUtc, lt: endUtc } },
+      where: {
+        occurredAt: { gte: startUtc, lt: endUtc },
+        type: { in: [...EARN_TYPES] },
+        amount: { gt: 0 },
+      },
       select: { occurredAt: true, amount: true },
       orderBy: { occurredAt: "asc" },
     });
 
-    // sum per hour
     const liveMap = new Map<string, number>();
     for (const ev of events) {
       const k = hourKeyISO(ev.occurredAt);
-      liveMap.set(k, (liveMap.get(k) ?? 0) + (ev.amount ?? 0));
+      liveMap.set(k, (liveMap.get(k) ?? 0) + clamp0(ev.amount ?? 0));
     }
 
     for (const b of buckets) {
-      b.pointsEarned = liveMap.get(b.hourUtc) ?? 0;
+      b.pointsEarned = clamp0(liveMap.get(b.hourUtc) ?? 0);
     }
 
-    const totalPoints = buckets.reduce((s, r) => s + (r.pointsEarned ?? 0), 0);
+    const totalPoints = buckets.reduce((s, r) => s + clamp0(r.pointsEarned ?? 0), 0);
 
     return NextResponse.json(
       {
@@ -158,14 +167,13 @@ export async function GET(req: Request) {
         endUtc: endUtc.toISOString(),
         totalPoints,
         hourly: buckets,
-        source: "fallback_point_event",
+        source: "fallback_point_event_earned_only",
       },
       { headers: { "Cache-Control": "no-store" } }
     );
   }
 
-  const hourly = buckets;
-  const totalPoints = hourly.reduce((s, r) => s + (r.pointsEarned ?? 0), 0);
+  const totalPoints = buckets.reduce((s, r) => s + clamp0(r.pointsEarned ?? 0), 0);
 
   return NextResponse.json(
     {
@@ -174,8 +182,8 @@ export async function GET(req: Request) {
       startUtc: startUtc.toISOString(),
       endUtc: endUtc.toISOString(),
       totalPoints,
-      hourly,
-      source: "metrics_hourly_rollup",
+      hourly: buckets,
+      source: "metrics_hourly_rollup_system",
     },
     { headers: { "Cache-Control": "no-store" } }
   );
