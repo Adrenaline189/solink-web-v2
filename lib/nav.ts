@@ -8,6 +8,7 @@ export const NAV_ITEMS = [
   { key: "pricing",   label: "Pricing",   href: "/pricing" },
   { key: "tokenomics", label: "Tokenomics", href: "/tokenomics" },
   { key: "resources", label: "Resources", href: "/resources" },
+ { key: "download", label: "Download", href: "/download" },
   { key: "ir",        label: "IR",        href: "/ir" },
   { key: "contact",   label: "Contact",   href: "/contact" },
   { key: "dashboard", label: "Dashboard", href: "/dashboard" },

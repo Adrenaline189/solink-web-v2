@@ -16,6 +16,8 @@ import {
   Sparkles,
   LifeBuoy,
   Newspaper,
+  Download,
+  ExternalLink,
 } from "lucide-react";
 
 type Card = {
@@ -175,6 +177,28 @@ export default function ResourcesClient() {
           <p className="mx-auto mt-4 max-w-2xl text-white/75 leading-relaxed">
             Documentation, examples, and updates to help you ship with Solink.
           </p>
+
+          {/* Quick links (keeps Resources as reading hub, not a download hub) */}
+          <div className="mx-auto mt-6 flex flex-wrap justify-center gap-2">
+            <Link
+              href={"/download" as any}
+              className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-2 text-xs font-semibold text-white/80 hover:bg-white/10 transition"
+            >
+              <Download className="h-4 w-4" /> Downloads
+            </Link>
+            <Link
+              href={"/whitepaper" as any}
+              className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-2 text-xs font-semibold text-white/80 hover:bg-white/10 transition"
+            >
+              Whitepaper <ExternalLink className="h-4 w-4" />
+            </Link>
+            <Link
+              href={"/resources/api" as any}
+              className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-2 text-xs font-semibold text-white/80 hover:bg-white/10 transition"
+            >
+              API Reference <ArrowRight className="h-4 w-4" />
+            </Link>
+          </div>
 
           {/* Search */}
           <div className="mx-auto mt-8 max-w-xl">
