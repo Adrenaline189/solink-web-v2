@@ -16,6 +16,7 @@ const WalletMultiButton = NextDynamic(
 
 import React, { Suspense, useEffect, useState, useCallback, useMemo } from "react";
 export const dynamic = "force-dynamic";
+
 import { formatBandwidth } from "@/lib/format";
 import { Card, CardContent } from "../../components/ui/card";
 import { Button } from "../../components/ui/button";
@@ -31,7 +32,6 @@ import {
 } from "lucide-react";
 
 import { fetchHourly, fetchRealtime, fetchTransactions } from "../../lib/data/dashboard";
-
 
 import HourlyPoints from "../../components/charts/HourlyPoints";
 import { useWallet } from "@solana/wallet-adapter-react";
@@ -100,6 +100,7 @@ async function fetchDashboardSummaryClient(
       cache: "no-store",
       signal,
       credentials: "include",
+      headers: { Accept: "application/json" },
     });
 
     if (!res.ok) {
@@ -343,6 +344,7 @@ function DashboardInner() {
         cache: "no-store",
         signal,
         credentials: "include",
+        headers: { Accept: "application/json" },
       });
       if (!res.ok) throw new Error("Failed to fetch /api/dashboard/metrics");
       const json: SystemMetricsResp = await res.json();
@@ -368,67 +370,66 @@ function DashboardInner() {
   }, [loadSystemMetrics, range]);
 
   /* System Daily (GLOBAL) จาก /api/dashboard/system-daily */
-const loadSystemDaily = useCallback(async (r: DashboardRange, signal?: AbortSignal) => {
-  try {
-    setSysDailyLoading(true);
-    const res = await fetch(`/api/dashboard/system-daily?range=${r}`, {
-      cache: "no-store",
-      signal,
-      credentials: "include",
-    });
-    if (!res.ok) throw new Error("Failed to fetch /api/dashboard/system-daily");
+  const loadSystemDaily = useCallback(async (r: DashboardRange, signal?: AbortSignal) => {
+    try {
+      setSysDailyLoading(true);
+      const res = await fetch(`/api/dashboard/system-daily?range=${r}`, {
+        cache: "no-store",
+        signal,
+        credentials: "include",
+        headers: { Accept: "application/json" },
+      });
+      if (!res.ok) throw new Error("Failed to fetch /api/dashboard/system-daily");
 
-    const json: any = await res.json();
+      const json: any = await res.json();
 
-    // ✅ รองรับหลาย format: days (เก่า) / series (ใหม่) / daily (compat)
-    const src =
-      (Array.isArray(json?.days) && json.days) ||
-      (Array.isArray(json?.series) && json.series) ||
-      (Array.isArray(json?.daily) && json.daily) ||
-      [];
+      // ✅ รองรับหลาย format: days (เก่า) / series (ใหม่) / daily (compat)
+      const src =
+        (Array.isArray(json?.days) && json.days) ||
+        (Array.isArray(json?.series) && json.series) ||
+        (Array.isArray(json?.daily) && json.daily) ||
+        [];
 
-    const series = src
-      .map((d: any) => {
-        // days format (เก่า): { label, pointsEarned }
-        if (typeof d?.label === "string") {
-          const pts =
-            typeof d?.pointsEarned === "number" ? d.pointsEarned : Number(d?.pointsEarned ?? 0);
-          return { label: d.label, points: Number.isFinite(pts) ? pts : 0 };
-        }
+      const series = src
+        .map((d: any) => {
+          // days format (เก่า): { label, pointsEarned }
+          if (typeof d?.label === "string") {
+            const pts =
+              typeof d?.pointsEarned === "number" ? d.pointsEarned : Number(d?.pointsEarned ?? 0);
+            return { label: d.label, points: Number.isFinite(pts) ? pts : 0 };
+          }
 
-        // series/daily format (ใหม่): { dayUtc, points } หรือ { dayUtc, pointsEarned }
-        const dayUtc = typeof d?.dayUtc === "string" ? d.dayUtc : null;
-        if (!dayUtc) return null;
+          // series/daily format (ใหม่): { dayUtc, points } หรือ { dayUtc, pointsEarned }
+          const dayUtc = typeof d?.dayUtc === "string" ? d.dayUtc : null;
+          if (!dayUtc) return null;
 
-        const ptsRaw =
-          d?.points != null ? d.points : d?.pointsEarned != null ? d.pointsEarned : 0;
+          const ptsRaw = d?.points != null ? d.points : d?.pointsEarned != null ? d.pointsEarned : 0;
 
-        const pts = typeof ptsRaw === "number" ? ptsRaw : Number(ptsRaw);
-        const label = dayUtc.slice(0, 10); // YYYY-MM-DD
+          const pts = typeof ptsRaw === "number" ? ptsRaw : Number(ptsRaw);
+          const label = dayUtc.slice(0, 10); // YYYY-MM-DD
 
-        return { label, points: Number.isFinite(pts) ? pts : 0 };
-      })
-      .filter(Boolean) as Array<{ label: string; points: number }>;
+          return { label, points: Number.isFinite(pts) ? pts : 0 };
+        })
+        .filter(Boolean) as Array<{ label: string; points: number }>;
 
-    // เรียงวันกันหลุด (กัน API/DB ส่งไม่เรียง)
-    series.sort((a, b) => a.label.localeCompare(b.label));
+      // เรียงวันกันหลุด (กัน API/DB ส่งไม่เรียง)
+      series.sort((a, b) => a.label.localeCompare(b.label));
 
-    // total
-    const total = series.reduce((s, x) => s + (x.points ?? 0), 0);
+      // total
+      const total = series.reduce((s, x) => s + (x.points ?? 0), 0);
 
-    setSysDailySeries(series);
-    setSysDailyTotal(total);
-    setSysDailyError(null);
-  } catch (e: any) {
-    console.error("system-daily error:", e);
-    setSysDailyError(e?.message || "Failed to fetch system daily stats");
-    setSysDailySeries([]);
-    setSysDailyTotal(0);
-  } finally {
-    setSysDailyLoading(false);
-  }
-}, []);
-
+      setSysDailySeries(series);
+      setSysDailyTotal(total);
+      setSysDailyError(null);
+    } catch (e: any) {
+      console.error("system-daily error:", e);
+      setSysDailyError(e?.message || "Failed to fetch system daily stats");
+      setSysDailySeries([]);
+      setSysDailyTotal(0);
+    } finally {
+      setSysDailyLoading(false);
+    }
+  }, []);
 
   // โหลด System Daily เมื่อ range เปลี่ยน
   useEffect(() => {
@@ -481,20 +482,43 @@ const loadSystemDaily = useCallback(async (r: DashboardRange, signal?: AbortSign
         setUserDailyError(null);
         const res = await fetch(`/api/dashboard/user-daily?range=${dailyRange}`, {
           credentials: "include",
+          headers: { Accept: "application/json" },
         });
         const json = await res.json();
         if (!res.ok || !json.ok) {
           throw new Error(json?.error || "Failed to load user daily points");
         }
         if (!cancelled) {
-          const arr =
-  (Array.isArray(json?.items) && json.items) ||
-  (Array.isArray(json?.series) && json.series) ||
-  (Array.isArray(json?.daily) && json.daily) ||
-  [];
+          const src =
+            (Array.isArray(json?.items) && json.items) ||
+            (Array.isArray(json?.series) && json.series) ||
+            (Array.isArray(json?.daily) && json.daily) ||
+            [];
 
-setUserDaily(arr);
+          const cooked = (src as any[])
+            .map((d) => {
+              // รองรับ {label, points}
+              if (typeof d?.label === "string" && d?.points != null) {
+                const pts = Number(d.points ?? 0);
+                return { dayUtc: d.dayUtc ?? "", label: d.label, points: Number.isFinite(pts) ? pts : 0 };
+              }
 
+              // รองรับ {dayUtc, points} หรือ {dayUtc, pointsEarned}
+              const dayUtc = typeof d?.dayUtc === "string" ? d.dayUtc : null;
+              if (!dayUtc) return null;
+
+              const ptsRaw = d?.points != null ? d.points : d?.pointsEarned != null ? d.pointsEarned : 0;
+              const pts = Number(ptsRaw ?? 0);
+              return {
+                dayUtc,
+                label: dayUtc.slice(0, 10),
+                points: Number.isFinite(pts) ? pts : 0,
+              };
+            })
+            .filter(Boolean)
+            .sort((a, b) => (a!.label as string).localeCompare(b!.label as string));
+
+          setUserDaily(cooked as any);
         }
       } catch (e: any) {
         console.error("user-daily fetch error:", e);
@@ -906,21 +930,20 @@ setUserDaily(arr);
             loading={loading}
           />
           <KPI
-  title="Uptime Today"
-  value={summary ? `${Number(summary.uptimeHours).toFixed(2)} h` : "—"}
-  sub={summary ? `Goal: ≥ ${Number(summary.goalHours).toFixed(0)} h` : "—"}
-  icon={<Activity className="h-5 w-5" />}
-  loading={loading}
-/>
+            title="Uptime Today"
+            value={summary ? `${Number(summary.uptimeHours).toFixed(2)} h` : "—"}
+            sub={summary ? `Goal: ≥ ${Number(summary.goalHours).toFixed(0)} h` : "—"}
+            icon={<Activity className="h-5 w-5" />}
+            loading={loading}
+          />
 
           <KPI
-  title="Average Bandwidth"
-  value={summary ? formatBandwidth(summary.avgBandwidthMbps, prefs.units, 3) : "—"}
-  sub="Last 15 minutes"
-  icon={<Cloud className="h-5 w-5" />}
-  loading={loading}
-/>
-
+            title="Average Bandwidth"
+            value={summary ? formatBandwidth(summary.avgBandwidthMbps, prefs.units, 3) : "—"}
+            sub="Last 15 minutes"
+            icon={<Cloud className="h-5 w-5" />}
+            loading={loading}
+          />
         </div>
 
         {/* Charts + Quality Panel */}
@@ -1042,19 +1065,17 @@ setUserDaily(arr);
                       <XAxis dataKey="label" tick={{ fontSize: 10 }} />
                       <YAxis allowDecimals={false} />
                       <Tooltip
-  cursor={false} // ✅ ปิดแถบเทา/ขาวที่ตามเมาส์
-  contentStyle={{
-    backgroundColor: "rgba(15,23,42,0.96)",
-    border: "1px solid rgba(148,163,184,0.5)",
-    borderRadius: 12,
-    padding: "8px 10px",
-  }}
-  labelStyle={{ color: "#e5e7eb", fontSize: 12 }}
-  itemStyle={{ color: "#22c55e", fontSize: 12 }}
-  formatter={(v: number) => [`${v.toLocaleString()} pts`, "System daily"]}
-/>
-
-
+                        cursor={false}
+                        contentStyle={{
+                          backgroundColor: "rgba(15,23,42,0.96)",
+                          border: "1px solid rgba(148,163,184,0.5)",
+                          borderRadius: 12,
+                          padding: "8px 10px",
+                        }}
+                        labelStyle={{ color: "#e5e7eb", fontSize: 12 }}
+                        itemStyle={{ color: "#22c55e", fontSize: 12 }}
+                        formatter={(v: number) => [`${v.toLocaleString()} pts`, "System daily"]}
+                      />
                       <Bar dataKey="points" radius={[6, 6, 0, 0]} fill="#22c55e" />
                     </BarChart>
                   </ResponsiveContainer>
@@ -1123,7 +1144,14 @@ setUserDaily(arr);
                         itemStyle={{ color: "#6366f1", fontSize: 12 }}
                         formatter={(v: number) => [`${v.toLocaleString()} pts`, "Daily points"]}
                       />
-                      <Area type="monotone" dataKey="points" stroke="#6366f1" strokeWidth={2} fill="url(#userDailyG)" fillOpacity={1} />
+                      <Area
+                        type="monotone"
+                        dataKey="points"
+                        stroke="#6366f1"
+                        strokeWidth={2}
+                        fill="url(#userDailyG)"
+                        fillOpacity={1}
+                      />
                     </AreaChart>
                   </ResponsiveContainer>
                 )}
@@ -1239,7 +1267,6 @@ setUserDaily(arr);
               <StatusItem label="Client Version" value={pingVersion ?? "—"} />
               <StatusItem label="Latency" value={latency != null ? `~${Math.round(latency)} ms` : "Measuring…"} />
 
-              {/* Session stability chart (latency history) */}
               <div className="mt-4">
                 <div className="flex items-center justify-between mb-1">
                   <span className="text-sm text-slate-300">Session stability</span>
@@ -1419,8 +1446,6 @@ function StatusItem({ label, value, positive }: { label: string; value: string; 
     </div>
   );
 }
-
-/* --------- Tx type formatting (3A: human-friendly labels & badges) --------- */
 
 type TxTypeDescriptor = {
   label: string;

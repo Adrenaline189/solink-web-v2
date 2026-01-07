@@ -1,4 +1,3 @@
-// app/api/dashboard/system-daily/route.ts
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
@@ -17,7 +16,12 @@ function floorUtcDay(d: Date) {
 }
 
 function addDaysUtc(d: Date, days: number) {
-  return new Date(d.getTime() + days * 24 * 60 * 60 * 1000);
+  return new Date(d.getTime() + days * 86_400_000);
+}
+
+function clamp0(n: any) {
+  const v = Number(n ?? 0);
+  return Number.isFinite(v) ? Math.max(0, v) : 0;
 }
 
 export async function GET(req: Request) {
@@ -43,19 +47,13 @@ export async function GET(req: Request) {
       endUtc = addDaysUtc(day0, 1);
     }
 
-    // สร้าง bucket วันให้ครบทุกวันในช่วง
     const daysCount = Math.max(1, Math.round((endUtc.getTime() - startUtc.getTime()) / 86_400_000));
-    const buckets: Array<{ dayUtc: string; points: number; pointsEarned: number }> = [];
-    for (let i = 0; i < daysCount; i++) {
+    const buckets = Array.from({ length: daysCount }).map((_, i) => {
       const d = addDaysUtc(startUtc, i);
-      buckets.push({
-        dayUtc: d.toISOString(),
-        points: 0,
-        pointsEarned: 0,
-      });
-    }
+      const iso = d.toISOString();
+      return { dayUtc: iso, label: iso.slice(0, 10), points: 0 };
+    });
 
-    // อ่านจาก MetricsDaily (system)
     const rows = await prisma.metricsDaily.findMany({
       where: {
         dayUtc: { gte: startUtc, lt: endUtc },
@@ -65,21 +63,15 @@ export async function GET(req: Request) {
       select: { dayUtc: true, pointsEarned: true },
     });
 
-    // merge
     const map = new Map<string, number>();
-    for (const r of rows) map.set(floorUtcDay(r.dayUtc).toISOString(), r.pointsEarned ?? 0);
+    for (const r of rows) map.set(floorUtcDay(r.dayUtc).toISOString(), clamp0(r.pointsEarned));
 
     for (const b of buckets) {
-      const v = map.get(b.dayUtc);
-      const pts = typeof v === "number" ? v : 0;
-      b.points = pts;
-      b.pointsEarned = pts;
+      b.points = clamp0(map.get(b.dayUtc) ?? 0);
     }
 
-    const todayKey = day0.toISOString();
-    const todayTotal = map.get(todayKey) ?? 0;
+    const todayTotal = clamp0(map.get(day0.toISOString()) ?? 0);
 
-    // ✅ ส่งทั้งรูปแบบใหม่/เก่า ให้ UI ที่คาดหวังคนละชื่อไม่พัง
     return NextResponse.json(
       {
         ok: true,
@@ -87,11 +79,14 @@ export async function GET(req: Request) {
         tz,
         todayTotal,
 
-        // รูปแบบที่คุณ curl เห็นอยู่แล้ว
-        series: buckets.map((x) => ({ dayUtc: x.dayUtc, points: x.points })),
+        // ✅ UI-friendly
+        series: buckets.map((x) => ({ dayUtc: x.dayUtc, label: x.label, points: x.points })),
 
-        // ✅ เพิ่มรูปแบบสำรอง (UI บางจุดชอบเรียก daily + pointsEarned)
-        daily: buckets.map((x) => ({ dayUtc: x.dayUtc, pointsEarned: x.pointsEarned })),
+        // ✅ compat
+        daily: buckets.map((x) => ({ dayUtc: x.dayUtc, label: x.label, pointsEarned: x.points })),
+
+        // (ถ้าคุณมี UI เก่าที่เรียก days)
+        days: buckets.map((x) => ({ dayUtc: x.dayUtc, label: x.label, pointsEarned: x.points })),
       },
       { status: 200, headers: { "Cache-Control": "no-store" } }
     );

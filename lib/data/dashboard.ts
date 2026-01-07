@@ -1,4 +1,3 @@
-// lib/data/dashboard.ts
 import type { DashboardRange, HourlyPoint, Tx } from "@/types/dashboard";
 
 /** helper */
@@ -12,8 +11,6 @@ async function safeJson(res: Response) {
 
 /** ---------------------------
  * Hourly Points (User)
- * GET /api/dashboard/hourly?range=today|7d|30d
- * (คงแบบเดิม เพราะของเดิมกราฟขึ้น)
  * -------------------------- */
 export async function fetchHourly(
   range: DashboardRange,
@@ -31,7 +28,6 @@ export async function fetchHourly(
     const json: any = await safeJson(res);
     if (!json?.ok) return [];
 
-    // รองรับหลาย shape
     const arr =
       (Array.isArray(json?.items) && json.items) ||
       (Array.isArray(json?.hourly) && json.hourly) ||
@@ -39,7 +35,7 @@ export async function fetchHourly(
       (Array.isArray(json?.data) && json.data) ||
       [];
 
-    const out: HourlyPoint[] = arr
+    return arr
       .map((r: any) => {
         const ts =
           typeof r?.ts === "string"
@@ -51,21 +47,13 @@ export async function fetchHourly(
             : null;
 
         const raw =
-          r?.points != null
-            ? r.points
-            : r?.pointsEarned != null
-            ? r.pointsEarned
-            : r?.value;
+          r?.points != null ? r.points : r?.pointsEarned != null ? r.pointsEarned : r?.value;
 
         const points = typeof raw === "number" ? raw : Number(raw ?? 0);
         if (!ts) return null;
-
-        // NOTE: โครงสร้าง HourlyPoint ของโปรเจกต์คุณใช้ {ts, points}
         return { ts, points: Number.isFinite(points) ? points : 0 } as HourlyPoint;
       })
       .filter(Boolean) as HourlyPoint[];
-
-    return out;
   } catch {
     return [];
   }
@@ -73,10 +61,6 @@ export async function fetchHourly(
 
 /** ---------------------------
  * Realtime Today Points (User)
- * GET /api/dashboard/realtime
- *
- * ✅ FIX: คืน shape ที่ page.tsx ต้องใช้ (มี ok/dayUtc)
- * เพื่อให้ `if (data && data.ok) ...` ไม่ error
  * -------------------------- */
 export type DashboardRealtime = {
   ok: boolean;
@@ -107,7 +91,6 @@ export async function fetchRealtime(signal?: AbortSignal): Promise<DashboardReal
     const json: any = await safeJson(res);
     if (!json) return fallback;
 
-    // route ของคุณส่ง { ok, dayUtc, pointsToday, livePoints, rolledPoints }
     const ok = Boolean(json.ok);
 
     const dayUtc =
@@ -133,8 +116,6 @@ export async function fetchRealtime(signal?: AbortSignal): Promise<DashboardReal
 
 /** ---------------------------
  * Transactions (User)
- * GET /api/dashboard/transactions?range=...
- * (คงแบบเดิม)
  * -------------------------- */
 export async function fetchTransactions(
   range: DashboardRange,
@@ -152,7 +133,6 @@ export async function fetchTransactions(
     const json: any = await safeJson(res);
     if (!json?.ok) return [];
 
-    // รองรับหลายชื่อ field
     const arr =
       (Array.isArray(json?.items) && json.items) ||
       (Array.isArray(json?.transactions) && json.transactions) ||
@@ -164,4 +144,35 @@ export async function fetchTransactions(
   } catch {
     return [];
   }
+}
+
+/** ---------------------------
+ * Daily series normalizer (optional helper)
+ * -------------------------- */
+export type DailyPoint = { dayUtc: string; label: string; points: number };
+
+export function normalizeDailySeries(json: any): DailyPoint[] {
+  const src =
+    (Array.isArray(json?.series) && json.series) ||
+    (Array.isArray(json?.days) && json.days) ||
+    (Array.isArray(json?.daily) && json.daily) ||
+    (Array.isArray(json?.items) && json.items) ||
+    [];
+
+  const out = src
+    .map((d: any) => {
+      const dayUtc = typeof d?.dayUtc === "string" ? d.dayUtc : null;
+      const label =
+        typeof d?.label === "string" ? d.label : dayUtc ? dayUtc.slice(0, 10) : null;
+
+      const raw = d?.points != null ? d.points : d?.pointsEarned != null ? d.pointsEarned : 0;
+      const points = typeof raw === "number" ? raw : Number(raw ?? 0);
+
+      if (!dayUtc || !label) return null;
+      return { dayUtc, label, points: Number.isFinite(points) ? points : 0 } as DailyPoint;
+    })
+    .filter(Boolean) as DailyPoint[];
+
+  out.sort((a, b) => a.label.localeCompare(b.label));
+  return out;
 }
