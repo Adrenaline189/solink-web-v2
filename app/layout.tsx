@@ -12,7 +12,7 @@ import MainNav from "@/components/MainNav";
 import MobileMenu from "@/components/MobileMenu";
 import HtmlPrefSync from "@/components/HtmlPrefSync";
 import RefBadge from "@/components/RefBadge";
-import { NAV_ITEMS } from "@/lib/nav";
+import { NAV_ITEMS, flattenNav } from "@/lib/nav";
 import logo from "@/public/solink-logo.png";
 
 import { Analytics } from "@vercel/analytics/react";
@@ -129,12 +129,16 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                     />
                     <span className="text-lg font-semibold">Solink</span>
                   </Link>
+
+                  {/* Desktop navigation (supports groups) */}
                   <MainNav items={[...NAV_ITEMS]} />
                 </div>
 
                 <div className="flex items-center gap-3">
                   <RefBadge />
-                  <MobileMenu items={[...NAV_ITEMS]} />
+
+                  {/* Mobile navigation (links only) */}
+                  <MobileMenu items={flattenNav(NAV_ITEMS)} />
                 </div>
               </div>
             </header>
