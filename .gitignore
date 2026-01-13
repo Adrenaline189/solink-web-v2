@@ -42,3 +42,4 @@ scripts/seed-*
 # generated / static pdf
 app/whitepaper.pdf/
 
+.DS_Store
