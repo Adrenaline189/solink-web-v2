@@ -24,6 +24,7 @@ import SolanaConnectButton from "@/components/SolanaConnectButton";
 type Phase = {
   key: string;
   label: string;
+  round: number;
   start: string;
   end: string;
   priceUsd: number;
@@ -37,10 +38,10 @@ const YEAR = new Date().getFullYear();
 const TZ = "+07:00";
 
 /**
- * ✅ Schedule (เวลาไทย 19:00) — 3 เดือนเต็ม:
- * - Seed:    Jul 1 → Aug 1     (1 เดือน)
- * - Private: Aug 1 → Sep 1     (1 เดือน)
- * - Public:  Sep 1 → Oct 1     (1 เดือน)
+ * ✅ Schedule (เวลาไทย 19:00) — 3 รอบ รอบละ 1 เดือน:
+ * - Round 1: Seed     Jul 1  → Aug 1
+ * - Round 2: Private  Aug 1  → Sep 1
+ * - Round 3: Public   Sep 1  → Oct 1
  *
  * Override วันเริ่มรอบแรก: NEXT_PUBLIC_PRESALE_START
  */
@@ -48,6 +49,7 @@ const PHASES: Phase[] = [
   {
     key: "seed",
     label: "Seed",
+    round: 1,
     start: process.env.NEXT_PUBLIC_PRESALE_START ?? `${YEAR}-07-01T19:00:00${TZ}`,
     end: `${YEAR}-08-01T19:00:00${TZ}`,
     priceUsd: 0.005,
@@ -58,6 +60,7 @@ const PHASES: Phase[] = [
   {
     key: "private",
     label: "Private",
+    round: 2,
     start: `${YEAR}-08-01T19:00:00${TZ}`,
     end: `${YEAR}-09-01T19:00:00${TZ}`,
     priceUsd: 0.01,
@@ -68,6 +71,7 @@ const PHASES: Phase[] = [
   {
     key: "public",
     label: "Public",
+    round: 3,
     start: `${YEAR}-09-01T19:00:00${TZ}`,
     end: `${YEAR}-10-01T19:00:00${TZ}`,
     priceUsd: 0.02,
@@ -213,12 +217,12 @@ export default function PresaleSolanaOnlyPage() {
 
   const phaseLabel =
     mode === "pre"
-      ? `${active.label} starts in`
+      ? `Round ${active.round} (${active.label}) starts in`
       : mode === "live"
-      ? `${active.label} · ${formatDate(start)} → ${formatDate(end)}`
-      : `${active.label} ended · ${formatDate(start)} → ${formatDate(end)}`;
+      ? `Round ${active.round} (${active.label}) · ${formatDate(start)} → ${formatDate(end)}`
+      : `Round ${active.round} (${active.label}) ended · ${formatDate(start)} → ${formatDate(end)}`;
 
-  const statusBadge = mode === "live" ? "Live" : mode === "pre" ? "Upcoming" : "Ended";
+  const statusBadge = mode === "live" ? `Live — Round ${active.round}` : mode === "pre" ? "Upcoming" : "Ended";
 
   return (
     <main className="relative min-h-screen bg-gradient-to-b from-slate-950 via-indigo-950 to-slate-950 text-white">
@@ -239,7 +243,7 @@ export default function PresaleSolanaOnlyPage() {
             <div className="min-w-0">
               <div className="text-sm font-semibold truncate">Solink Presale</div>
               <div className="text-[11px] text-white/60 truncate">
-                Solana • {active.label} • {statusBadge}
+                Round {active.round} of {PHASES.length} • {active.label} • {statusBadge}
               </div>
             </div>
           </div>
@@ -271,7 +275,7 @@ export default function PresaleSolanaOnlyPage() {
 
               <span className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-white/80">
                 <CalendarDays className="size-4 text-cyan-200" />
-                Starts Jul 1, {YEAR} (TH) • 3 Months
+                3 Rounds • 1 Month Each • Jul–Oct {YEAR} (TH)
               </span>
 
               <span
@@ -293,7 +297,9 @@ export default function PresaleSolanaOnlyPage() {
             </div>
 
             <h1 className="mt-5 text-4xl md:text-5xl font-bold tracking-tight">
-              {active.label} Round
+              Round {active.round} of {PHASES.length}
+              <span className="text-white/60"> • </span>
+              {active.label}
               <span className="text-white/60"> • </span>
               <span className="bg-gradient-to-r from-fuchsia-200 via-white to-cyan-200 bg-clip-text text-transparent">
                 Solana Presale
@@ -331,7 +337,7 @@ export default function PresaleSolanaOnlyPage() {
                 <StatCard icon={<Coins className="size-5" />} label="Price" value={`$${active.priceUsd.toFixed(4)} / SLK`} />
               </div>
 
-              {/* Phase pills */}
+              {/* Phase pills — Round X • Name • Date */}
               <div className="mt-5 flex flex-wrap gap-2">
                 {PHASES.map((p) => {
                   const act = p.key === active.key;
@@ -343,13 +349,63 @@ export default function PresaleSolanaOnlyPage() {
                           ? "border-white/40 bg-white/10"
                           : "border-white/10 bg-white/5 text-white/70 hover:bg-white/10"
                       }`}
-                      title={`${p.label}: ${formatDate(new Date(p.start))} → ${formatDate(new Date(p.end))}`}
+                      title={`${formatDate(new Date(p.start))} → ${formatDate(new Date(p.end))}`}
                     >
-                      {p.label} <span className="text-white/60">{p.percent}%</span>
-                      <span className="text-white/60">•</span>${p.priceUsd.toFixed(3)}
+                      <span className={`font-semibold ${act ? "text-white" : "text-white/60"}`}>
+                        R{p.round}
+                      </span>
+                      <span className={act ? "" : "text-white/50"}>{p.label}</span>
+                      <span className="text-white/40">•</span>
+                      <span className="text-white/60">{formatDate(new Date(p.start))}</span>
+                      <span className="text-white/40">→</span>
+                      <span className="text-white/60">{formatDate(new Date(p.end))}</span>
                     </span>
                   );
                 })}
+              </div>
+
+              {/* Presale Schedule — All 3 Rounds */}
+              <div className="mt-5 rounded-2xl border border-white/10 bg-white/5 overflow-hidden">
+                <div className="px-4 py-2 border-b border-white/10 text-xs font-semibold text-white/70">
+                  📅 Presale Schedule — 3 Rounds, 1 Month Each
+                </div>
+                <div className="divide-y divide-white/5">
+                  {PHASES.map((p) => {
+                    const act = p.key === active.key;
+                    const isPast = nowMs != null && new Date(p.end).getTime() < nowMs;
+                    return (
+                      <div
+                        key={p.key}
+                        className={`px-4 py-3 flex items-center justify-between gap-3 ${
+                          act ? "bg-white/5" : isPast ? "opacity-50" : ""
+                        }`}
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold ${
+                            act ? "bg-fuchsia-500/30 text-fuchsia-200" : "bg-white/10 text-white/60"
+                          }`}>
+                            R{p.round}
+                          </div>
+                          <div>
+                            <div className={`font-semibold text-sm ${act ? "text-white" : "text-white/70"}`}>
+                              {p.label}
+                            </div>
+                            <div className="text-xs text-white/50">
+                              {formatDate(new Date(p.start))} → {formatDate(new Date(p.end))}
+                            </div>
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <div className="text-sm font-semibold">${p.priceUsd.toFixed(3)} / SLK</div>
+                          <div className="text-xs text-white/50">Cap ${p.hardCapUsd.toLocaleString()}</div>
+                        </div>
+                        {act && (
+                          <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
 
               {/* Progress (no inline style) */}
