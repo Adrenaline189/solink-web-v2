@@ -38,9 +38,9 @@ const TZ = "+07:00";
 
 /**
  * ✅ Schedule (เวลาไทย 19:00) — 3 เดือนเต็ม:
- * - Seed:    May 1 → Jun 1      (1 เดือน)
- * - Private: Jun 1 → Jul 1     (1 เดือน)
- * - Public:  Jul 1 → Aug 1      (1 เดือน)
+ * - Seed:    Jul 1 → Aug 1     (1 เดือน)
+ * - Private: Aug 1 → Sep 1     (1 เดือน)
+ * - Public:  Sep 1 → Oct 1     (1 เดือน)
  *
  * Override วันเริ่มรอบแรก: NEXT_PUBLIC_PRESALE_START
  */
@@ -48,8 +48,8 @@ const PHASES: Phase[] = [
   {
     key: "seed",
     label: "Seed",
-    start: process.env.NEXT_PUBLIC_PRESALE_START ?? `${YEAR}-05-01T19:00:00${TZ}`,
-    end: `${YEAR}-06-01T19:00:00${TZ}`,
+    start: process.env.NEXT_PUBLIC_PRESALE_START ?? `${YEAR}-07-01T19:00:00${TZ}`,
+    end: `${YEAR}-08-01T19:00:00${TZ}`,
     priceUsd: 0.005,
     hardCapUsd: 250_000,
     softCapUsd: 100_000,
@@ -58,8 +58,8 @@ const PHASES: Phase[] = [
   {
     key: "private",
     label: "Private",
-    start: `${YEAR}-06-01T19:00:00${TZ}`,
-    end: `${YEAR}-07-01T19:00:00${TZ}`,
+    start: `${YEAR}-08-01T19:00:00${TZ}`,
+    end: `${YEAR}-09-01T19:00:00${TZ}`,
     priceUsd: 0.01,
     hardCapUsd: 500_000,
     softCapUsd: 200_000,
@@ -68,8 +68,8 @@ const PHASES: Phase[] = [
   {
     key: "public",
     label: "Public",
-    start: `${YEAR}-07-01T19:00:00${TZ}`,
-    end: `${YEAR}-08-01T19:00:00${TZ}`,
+    start: `${YEAR}-09-01T19:00:00${TZ}`,
+    end: `${YEAR}-10-01T19:00:00${TZ}`,
     priceUsd: 0.02,
     hardCapUsd: 1_000_000,
     softCapUsd: 300_000,
@@ -212,7 +212,11 @@ export default function PresaleSolanaOnlyPage() {
   }
 
   const phaseLabel =
-    mode === "pre" ? `${active.label} starts in` : mode === "live" ? `${active.label} ends in` : `${active.label} ended`;
+    mode === "pre"
+      ? `${active.label} starts in`
+      : mode === "live"
+      ? `${active.label} · ${formatDate(start)} → ${formatDate(end)}`
+      : `${active.label} ended · ${formatDate(start)} → ${formatDate(end)}`;
 
   const statusBadge = mode === "live" ? "Live" : mode === "pre" ? "Upcoming" : "Ended";
 
@@ -267,7 +271,7 @@ export default function PresaleSolanaOnlyPage() {
 
               <span className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-white/80">
                 <CalendarDays className="size-4 text-cyan-200" />
-                Starts May 1, {YEAR} (TH) • 3 Months
+                Starts Jul 1, {YEAR} (TH) • 3 Months
               </span>
 
               <span
