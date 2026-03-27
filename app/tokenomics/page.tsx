@@ -40,7 +40,7 @@ const ROUNDS = [
   {
     name: "Seed",
     percent: 5,
-    price: 0.005,
+    price: 0.015,
     cliff: "6m",
     vest: "12m",
     note: "Cliff 6m · Linear vest 1/12 monthly",
@@ -48,7 +48,7 @@ const ROUNDS = [
   {
     name: "Private",
     percent: 10,
-    price: 0.010,
+    price: 0.030,
     cliff: "6m",
     vest: "12m",
     note: "Cliff 6m · Linear vest 1/12 monthly",
@@ -56,7 +56,7 @@ const ROUNDS = [
   {
     name: "Public",
     percent: 10,
-    price: 0.020,
+    price: 0.050,
     cliff: "—",
     vest: "6m",
     note: "10% TGE · 90% vested linearly over 6 months",
@@ -367,7 +367,7 @@ export default function TokenomicsPage() {
   q: "How many tokens are sold and how much will be raised?",
   a:
     "Total sold = 250,000,000 SLK (25% of supply) across 3 rounds. " +
-    "Expected raise: Seed $250K + Private $1M + Public $2M = $3.25M.",
+    "Expected raise: Seed $750K + Private $3M + Public $5M = $8.75M.",
 },
 
     {
