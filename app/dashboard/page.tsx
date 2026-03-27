@@ -923,6 +923,14 @@ function DashboardInner() {
           </div>
         </div>
 
+        {/* Extension Download Banner */}
+        <ExtensionDownloadBanner />
+
+        {/* Extension Farm Card */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
+          <ExtensionFarmCard />
+        </div>
+
         {/* KPI Cards */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
           <KPI
@@ -1251,31 +1259,7 @@ function DashboardInner() {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
           <Card className="lg:col-span-2">
             <CardContent className="p-5">
-              <h3 className="text-lg font-semibold">Invite &amp; Earn</h3>
-              <p className="text-slate-400 mb-4">Share your referral link and earn bonus points when friends join.</p>
-
-              <label htmlFor="ref-link" className="text-sm text-slate-400">
-                Your referral link
-              </label>
-              <div className="mt-2 flex flex-col sm:flex-row gap-2">
-                <input
-                  id="ref-link"
-                  value={refLink}
-                  readOnly
-                  placeholder="https://solink.network/r/..."
-                  title="Your referral link"
-                  aria-label="Your referral link"
-                  className="w-full rounded-xl bg-slate-900/60 border border-slate-700 px-3 py-2 text-sm text-slate-200"
-                />
-                <div className="flex gap-2">
-                  <Button onClick={copy} className="rounded-xl px-4" title="Copy referral link">
-                    {copied ? "Copied!" : "Copy"}
-                  </Button>
-                  <Button variant="secondary" className="rounded-xl" title="Share referral link">
-                    Share
-                  </Button>
-                </div>
-              </div>
+              <ReferralCard />
             </CardContent>
           </Card>
 
