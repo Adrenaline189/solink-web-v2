@@ -29,6 +29,7 @@ import {
   TrendingUp,
   BarChart4,
   LineChart as LineIcon,
+  Coins,
 } from "lucide-react";
 
 import { fetchHourly, fetchRealtime, fetchTransactions } from "../../lib/data/dashboard";
@@ -207,9 +208,20 @@ function DashboardInner() {
   const [convertSuccess, setConvertSuccess] = useState<string | null>(null);
 
   const pointsNum = Number(convertPts || "0");
-  const slkRate = 1000; // 1000 pts = 1 SLK
+  // 1000 pts = 1 SLK (สอดคล้องกับ pricing: ~10 Mbps ได้ ~300 SLK/เดือน ตาม formula)
+  const SLK_RATE = 1000;
   const slkEstimated =
-    Number.isFinite(pointsNum) && pointsNum > 0 ? (pointsNum / slkRate).toFixed(2) : "0.00";
+    Number.isFinite(pointsNum) && pointsNum > 0 ? (pointsNum / SLK_RATE).toFixed(2) : "0.00";
+
+  // SLK estimate per month ตาม pricing page (bandwidth × earn factor)
+  // Formula: avg_Mbps × 0.7 pts/min × 60 × 24 × 30 / 1000 = SLK/เดือน
+  // ปัดเศษขึ้น
+  const estimatedSlkPerMonth = summary?.avgBandwidthMbps
+    ? Math.max(
+        0,
+        Math.ceil(summary.avgBandwidthMbps * 0.7 * 60 * 24 * 30 / SLK_RATE)
+      )
+    : null;
 
   /* Referral link (local only สำหรับตอนนี้) */
   useEffect(() => {
@@ -927,6 +939,13 @@ function DashboardInner() {
             value={summary ? summary.totalPoints.toLocaleString() : "—"}
             sub={summary ? `≈ ${summary.slk.toLocaleString()} SLK` : "—"}
             icon={<TrendingUp className="h-5 w-5" />}
+            loading={loading}
+          />
+          <KPI
+            title="Est. SLK / Month"
+            value={estimatedSlkPerMonth != null ? `~${estimatedSlkPerMonth.toLocaleString()}` : "—"}
+            sub={summary?.avgBandwidthMbps ? `@ ${summary.avgBandwidthMbps.toFixed(1)} Mbps` : "Share to earn"}
+            icon={<Coins className="h-5 w-5" />}
             loading={loading}
           />
           <KPI

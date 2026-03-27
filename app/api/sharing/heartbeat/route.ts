@@ -148,7 +148,9 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: false, error: "uptimeSeconds must be > 0" }, { status: 400 });
     }
 
-    // ให้แต้มเป็นนาที (กันปั่น: 1 request ได้สูงสุด 1 นาที)
+    // ให้แต้ม = bandwidth_Mbps × 0.7 (กันปั่น: สูงสุด 1 ครั้ง/นาที)
+    // เช่น 10 Mbps → 7 pts/นาที, 50 Mbps → 35 pts/นาที, 100 Mbps → 70 pts/นาที
+    // ~10 Mbps จะได้ ~500 SLK/เดือน ตาม pricing page
     const minutes = Math.max(0, Math.min(1, Math.floor(uptimeSeconds / 60)));
     if (minutes <= 0) {
       return NextResponse.json(
@@ -162,6 +164,11 @@ export async function POST(req: Request) {
         { status: 200 }
       );
     }
+
+    // คำนวณ points จาก bandwidth (ใช้ค่าสูงสุดระหว่าง download/upload)
+    const bw = bandwidthSampleMbps ?? 10; // default 10 Mbps ถ้าไม่มี
+    const pointsPerMinute = Math.round(bw * 0.7); // 1 point ต่อ 1.43 Mbps
+    const awarded = Math.max(1, pointsPerMinute * minutes); // ขั้นต่ำ 1 pt
 
     const minuteBucket = floorToMinuteUTC(now); // ใช้เป็น occurredAt
     const dedupeKey = `sharing:${user.id}:UPTIME_MINUTE:${minuteBucket.toISOString()}`;
@@ -204,17 +211,19 @@ export async function POST(req: Request) {
           userId: user.id,
           nodeId: null,
           type: "UPTIME_MINUTE",
-          amount: minutes, // นาทีละ 1 point
+          amount: awarded,
           meta: {
             uptimeSeconds,
             downloadMbps,
             uploadMbps,
             latencyMs,
-            bandwidthSampleMbps, // ✅ เพิ่มไว้ให้ summary/debug ใช้ง่าย
+            bandwidthSampleMbps,
+            bandwidthMbps: bw,
+            pointsPerMinute,
             source: "sharing/heartbeat",
           },
           source: "sharing",
-          ruleVersion: "v1",
+          ruleVersion: "v2",
           dedupeKey,
           nonce: crypto.randomUUID(),
           signatureOk: true,
@@ -226,12 +235,12 @@ export async function POST(req: Request) {
 
       const bal = await tx.pointBalance.upsert({
         where: { userId: user.id },
-        update: { balance: { increment: minutes } },
-        create: { userId: user.id, balance: minutes, slk: 0 },
+        update: { balance: { increment: awarded } },
+        create: { userId: user.id, balance: awarded, slk: 0 },
         select: { balance: true, slk: true },
       });
 
-      return { duplicate: false, eventId: ev.id, credited: minutes, balance: bal };
+      return { duplicate: false, eventId: ev.id, credited: awarded, balance: bal };
     });
 
     return NextResponse.json(
