@@ -43,7 +43,7 @@ const ROUNDS = [
     price: 0.005,
     cliff: "6m",
     vest: "12m",
-    note: "Linear vest (1/12 monthly) after cliff",
+    note: "Cliff 6m · Linear vest 1/12 monthly",
   },
   {
     name: "Private",
@@ -51,15 +51,15 @@ const ROUNDS = [
     price: 0.010,
     cliff: "6m",
     vest: "12m",
-    note: "Linear vest (1/12 monthly) after cliff",
+    note: "Cliff 6m · Linear vest 1/12 monthly",
   },
   {
     name: "Public",
     percent: 10,
     price: 0.020,
     cliff: "—",
-    vest: "—",
-    note: "100% unlock at TGE (liquidity)",
+    vest: "6m",
+    note: "10% TGE · 90% vested linearly over 6 months",
   },
 ];
 
@@ -70,56 +70,66 @@ const DISTRIBUTION = [
     name: "Seed (5%)",
     value: 5,
     color: "#a78bfa",
-    details: "Cliff: 6 months after TGE • Vesting: Linear 12 months (1/12 each month)",
+    details: "Cliff: 6 months after TGE · Vesting: Linear 12 months (1/12 each month) · Total: 18 months",
   },
   {
     name: "Private Sale (10%)",
     value: 10,
     color: "#8b5cf6",
-    details: "Cliff: 6 months after TGE • Vesting: Linear 12 months (1/12 each month)",
+    details: "Cliff: 6 months after TGE · Vesting: Linear 12 months (1/12 each month) · Total: 18 months",
   },
   {
     name: "Public Sale (10%)",
     value: 10,
     color: "#22c55e",
-    details: "Unlock: 100% at TGE (market liquidity)",
+    details: "10% unlock at TGE · Remaining 90% vested linearly over 6 months · Total: 6 months",
   },
   {
     name: "Team & Advisors (20%)",
     value: 20,
     color: "#f59e0b",
-    details: "Cliff: 12 months after TGE • Vesting: Linear 24 months (1/24 each month)",
+    details: "Cliff: 12 months after TGE · Vesting: Linear 18 months (1/18 each month) · Total: 30 months",
   },
   {
     name: "Community & Ecosystem (30%)",
     value: 30,
     color: "#60a5fa",
     details:
-      "For Airdrops, Rewards, Staking Incentives • Released in campaigns • Expected full distribution within 36 months",
+      "Earned via bandwidth sharing · Released through campaigns · Full distribution within 36 months",
   },
   {
     name: "Treasury & Reserve (15%)",
     value: 15,
     color: "#10b981",
     details:
-      "Cliff: 3 months after TGE • Unlock on-demand (Emergency/Partnerships) • Controlled by DAO Governance",
+      "Cliff: 3 months after TGE · Max 3% unlock per quarter · Controlled by DAO Governance",
   },
   {
     name: "Marketing & Partnerships (10%)",
     value: 10,
     color: "#e879f9",
-    details: "Unlock: 20% at TGE • Remaining vested linearly over 12 months",
+    details: "Cliff: 6 months after TGE · Vesting: Linear 18 months (1/18 each month) · Total: 24 months",
   },
 ];
 
-// ---- Demo series (unchanged) ----
+// ---- Vesting series (updated) ----
+// Based on: Private 10% (6m cliff+12m vest), Team 20% (12m cliff+18m vest),
+// Marketing 10% (6m cliff+18m vest), Community 30% (36m linear)
 const VESTING_SERIES = [
-  { m: 0, privateSale: 0, team: 0, community: 2, total: 12 },
-  { m: 6, privateSale: 2, team: 0, community: 5, total: 17 },
-  { m: 12, privateSale: 7.5, team: 0, community: 10, total: 27.5 },
-  { m: 18, privateSale: 15, team: 5, community: 15, total: 45 },
-  { m: 24, privateSale: 15, team: 10, community: 20, total: 55 },
-  { m: 36, privateSale: 15, team: 20, community: 30, total: 75 },
+  // M0: Public TGE 10% = 10M, rest = 0
+  { m: 0,  privateSale: 0,    team: 0,    marketing: 0,   community: 0,    total: 10 },
+  // M6: Private cliff ends, starts vesting; Marketing cliff ends, starts vesting
+  { m: 6,  privateSale: 0,    team: 0,    marketing: 0,   community: 5,    total: 13 },
+  // M12: Private 6m vest (50%); Team cliff ends; Community 33%
+  { m: 12, privateSale: 5,    team: 0,    marketing: 3.3, community: 10,   total: 28 },
+  // M18: Private fully vested; Team 6m vest (33%); Community 50%
+  { m: 18, privateSale: 10,   team: 6.7,  marketing: 6.7, community: 15,  total: 48 },
+  // M24: Team 12m vest (67%); Marketing fully vested; Community 67%
+  { m: 24, privateSale: 10,   team: 13.3, marketing: 10,  community: 20,   total: 63 },
+  // M30: Team cliff ends → fully vested at M30 (18m vest); Community 83%
+  { m: 30, privateSale: 10,   team: 20,    marketing: 10,  community: 25,  total: 75 },
+  // M36: Community fully vested; All unlocked
+  { m: 36, privateSale: 10,   team: 20,    marketing: 10,  community: 30,  total: 80 },
 ].map((d) => ({ ...d, label: `M${d.m}` }));
 
 const EMISSIONS_SERIES = Array.from({ length: 13 }, (_, i) => {
@@ -356,26 +366,34 @@ export default function TokenomicsPage() {
 {
   q: "How many tokens are sold and how much will be raised?",
   a:
-    `Total sold across rounds ≈ ${formatNumber(totals.tokensTotal)} SLK (25% of supply). ` +
-    `Expected raise ≈ ${usd(totals.usdtTotal)} in total.`,
+    "Total sold = 250,000,000 SLK (25% of supply) across 3 rounds. " +
+    "Expected raise: Seed $250K + Private $1M + Public $2M = $3.25M.",
 },
 
     {
       q: "What unlocks at TGE?",
       a:
-        "Public Sale tokens are 100% unlocked at TGE to provide market liquidity. Circulating supply at TGE depends on final launch parameters.",
+        "Only Public Sale tokens have a TGE unlock: 10% at TGE, remaining 90% vested linearly over 6 months. Circulating supply at TGE ≈ 10M SLK (1% of supply).",
     },
     {
       q: "How does vesting work for Seed and Private investors?",
-      a: "Both Seed and Private have a 6-month cliff after TGE, followed by linear vesting over 12 months (1/12 monthly).",
+      a: "Both Seed and Private have a 6-month cliff after TGE, followed by linear vesting over 12 months (1/12 monthly). Fully unlocked at month 18.",
     },
     {
       q: "What is the vesting schedule for Team & Advisors?",
-      a: "12-month cliff after TGE, then linear vesting over 24 months (1/24 monthly).",
+      a: "12-month cliff after TGE, then linear vesting over 18 months (1/18 monthly). Fully unlocked at month 30.",
     },
     {
       q: "How are Marketing & Partnerships tokens released?",
-      a: "20% unlock at TGE, with the remaining 80% vesting linearly over 12 months.",
+      a: "6-month cliff after TGE, then linear vesting over 18 months. Fully unlocked at month 24.",
+    },
+    {
+      q: "How are Community & Ecosystem tokens distributed?",
+      a: "Earned through bandwidth sharing. Tokens are released via campaigns and reward programs over 36 months.",
+    },
+    {
+      q: "How does Treasury & Reserve unlock?",
+      a: "3-month cliff after TGE. Max 3% of supply can be unlocked per quarter, controlled by DAO governance.",
     },
     { q: "How is the Treasury & Reserve managed?", a: "3-month cliff after TGE; unlocks on-demand under DAO governance." },
     { q: "What does “TGE” mean?", a: "Token Generation Event — when tokens are minted and vesting schedules begin." },
@@ -654,6 +672,7 @@ export default function TokenomicsPage() {
                   <ReferenceLine x="M12" stroke="#ffffff55" />
                   <Line type="monotone" dataKey="privateSale" name="Private Sale" stroke="#8b5cf6" strokeWidth={2} dot={false} />
                   <Line type="monotone" dataKey="team" name="Team & Advisors" stroke="#f59e0b" strokeWidth={2} dot={false} />
+                  <Line type="monotone" dataKey="marketing" name="Marketing" stroke="#e879f9" strokeWidth={2} dot={false} />
                   <Line type="monotone" dataKey="community" name="Community & Ecosystem" stroke="#60a5fa" strokeWidth={2} dot />
                   <Line type="monotone" dataKey="total" name="Total (approx)" stroke="#ffffff" strokeWidth={2} dot={false} />
                 </LineChart>
