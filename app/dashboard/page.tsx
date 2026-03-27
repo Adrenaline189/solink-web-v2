@@ -629,6 +629,8 @@ function DashboardInner() {
             downloadMbps: summary?.avgBandwidthMbps ? Number(summary.avgBandwidthMbps) : 12.3,
             uploadMbps: null,
             latencyMs: latency ?? null,
+            region: pingRegion ?? null,
+            version: pingVersion ?? null,
           }),
         });
 

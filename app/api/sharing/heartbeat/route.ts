@@ -9,6 +9,8 @@ type Body = {
   downloadMbps?: number;
   uploadMbps?: number;
   latencyMs?: number;
+  region?: string | null;
+  version?: string | null;
 };
 
 function floorToMinuteUTC(d: Date) {
@@ -32,15 +34,16 @@ function toFiniteNumber(v: any): number | null {
  * อัปเดต bandwidth sample ลง MetricsHourly (ชั่วโมงปัจจุบัน UTC)
  * - ทำให้ /summary?range=today มี avgBandwidthMbps ได้ทันที (ไม่ติด 0)
  * - ใช้ EMA เพื่อให้กราฟนิ่งขึ้น (ไม่เด้งแรง)
+ * - เก็บ region + version ด้วย (จาก heartbeat)
  */
 async function upsertHourlyBandwidthSample(args: {
   userId: string;
   now: Date;
   bandwidthSampleMbps: number | null;
+  region?: string | null;
+  version?: string | null;
 }) {
-  const { userId, now, bandwidthSampleMbps } = args;
-  if (bandwidthSampleMbps == null) return;
-
+  const { userId, now, bandwidthSampleMbps, region, version } = args;
   const hourUtc = floorToHourUTC(now);
 
   const existing = await prisma.metricsHourly.findUnique({
@@ -63,7 +66,8 @@ async function upsertHourlyBandwidthSample(args: {
         userId,
         pointsEarned: 0,
         avgBandwidth: bandwidthSampleMbps,
-        // region/version ไม่ได้อยู่ใน User schema ของคุณแล้ว -> ไม่ใส่
+        region: region ?? null,
+        version: version ?? null,
       },
     });
     return;
@@ -75,7 +79,11 @@ async function upsertHourlyBandwidthSample(args: {
 
   await prisma.metricsHourly.update({
     where: { id: existing.id },
-    data: { avgBandwidth: next },
+    data: {
+      avgBandwidth: next,
+      region: region ?? null,
+      version: version ?? null,
+    },
   });
 }
 
@@ -126,6 +134,8 @@ export async function POST(req: Request) {
     const downloadMbps = toFiniteNumber(body.downloadMbps);
     const uploadMbps = toFiniteNumber(body.uploadMbps);
     const latencyMs = toFiniteNumber(body.latencyMs);
+    const region = typeof body.region === "string" ? body.region : null;
+    const version = typeof body.version === "string" ? body.version : null;
 
     // ✅ bandwidth sample (เลือก max ระหว่าง down/up เพื่อไม่ทำให้ค่าดูต่ำเกิน)
     const bandwidthSampleMbps =
@@ -141,6 +151,8 @@ export async function POST(req: Request) {
       userId: user.id,
       now,
       bandwidthSampleMbps,
+      region,
+      version,
     });
 
     // validate เบาๆ
@@ -220,6 +232,8 @@ export async function POST(req: Request) {
             bandwidthSampleMbps,
             bandwidthMbps: bw,
             pointsPerMinute,
+            region,
+            version,
             source: "sharing/heartbeat",
           },
           source: "sharing",
