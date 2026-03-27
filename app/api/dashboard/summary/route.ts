@@ -171,18 +171,14 @@ export async function GET(req: NextRequest) {
     // --------------------------
     const goalHours = 8;
 
-    const uptimeAgg = await prisma.pointEvent.aggregate({
+    const uptimeMinutes = await prisma.pointEvent.count({
       where: {
         userId: user.id,
         type: "UPTIME_MINUTE",
         occurredAt: { gte: dayStart, lt: dayEnd },
         amount: { gt: 0 },
       },
-      _sum: { amount: true },
     });
-
-    const uptimeMinutesRaw = uptimeAgg._sum.amount ?? 0;
-    const uptimeMinutes = Number.isFinite(uptimeMinutesRaw) ? Math.max(0, uptimeMinutesRaw) : 0;
     const uptimeHours = uptimeMinutes / 60;
 
     // --------------------------
