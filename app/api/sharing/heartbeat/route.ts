@@ -74,8 +74,8 @@ async function upsertHourlyBandwidthSample(args: {
   }
 
   const old = typeof existing.avgBandwidth === "number" ? existing.avgBandwidth : null;
-  const next =
-    old == null ? bandwidthSampleMbps : old * (1 - alpha) + bandwidthSampleMbps * alpha;
+  const bw = bandwidthSampleMbps ?? 0;
+  const next = old == null ? bw : old * (1 - alpha) + bw * alpha;
 
   await prisma.metricsHourly.update({
     where: { id: existing.id },
