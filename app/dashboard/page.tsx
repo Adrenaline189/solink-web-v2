@@ -20,6 +20,9 @@ export const dynamic = "force-dynamic";
 import { formatBandwidth } from "@/lib/format";
 import { Card, CardContent } from "../../components/ui/card";
 import { Button } from "../../components/ui/button";
+import ExtensionDownloadBanner from "../../components/dashboard/ExtensionDownloadBanner";
+import ExtensionFarmCard from "../../components/dashboard/ExtensionFarmCard";
+import ReferralCard from "../../components/dashboard/ReferralCard";
 import {
   Link2,
   Gauge,
@@ -668,6 +671,8 @@ function DashboardInner() {
     address,
     latency,
     summary?.avgBandwidthMbps,
+    pingRegion,
+    pingVersion,
     refresh,
     refreshRealtime,
     loadSystemMetrics,
