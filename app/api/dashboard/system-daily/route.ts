@@ -51,26 +51,43 @@ export async function GET(req: Request) {
     const buckets = Array.from({ length: daysCount }).map((_, i) => {
       const d = addDaysUtc(startUtc, i);
       const iso = d.toISOString();
-      return { dayUtc: iso, label: iso.slice(0, 10), points: 0 };
+      return { dayUtc: iso, label: iso.slice(0, 10), points: 0, source: "metrics_daily" as const };
     });
 
-    const rows = await prisma.metricsDaily.findMany({
+    // 1) past days: read from MetricsDaily (userId = "system")
+    const pastRows = await prisma.metricsDaily.findMany({
       where: {
-        dayUtc: { gte: startUtc, lt: endUtc },
+        dayUtc: { gte: startUtc, lt: day0 },
         userId: "system",
       },
       orderBy: { dayUtc: "asc" },
       select: { dayUtc: true, pointsEarned: true },
     });
 
-    const map = new Map<string, number>();
-    for (const r of rows) map.set(floorUtcDay(r.dayUtc).toISOString(), clamp0(r.pointsEarned));
+    const pastMap = new Map<string, number>();
+    for (const r of pastRows) pastMap.set(floorUtcDay(r.dayUtc).toISOString(), clamp0(r.pointsEarned));
 
+    // 2) today: aggregate from MetricsHourly (userId = "system") — live, not rolled yet
+    const todayHourly = await prisma.metricsHourly.findMany({
+      where: {
+        hourUtc: { gte: day0, lt: endUtc },
+        userId: "system",
+      },
+      select: { pointsEarned: true },
+    });
+    const todayTotal = clamp0(todayHourly.reduce((s, r) => s + clamp0(r.pointsEarned), 0));
+
+    // fill buckets
     for (const b of buckets) {
-      b.points = clamp0(map.get(b.dayUtc) ?? 0);
+      const key = b.dayUtc;
+      if (key === day0.toISOString()) {
+        // today: from hourly aggregate
+        b.points = todayTotal;
+      } else {
+        // past: from daily rollup
+        b.points = clamp0(pastMap.get(key) ?? 0);
+      }
     }
-
-    const todayTotal = clamp0(map.get(day0.toISOString()) ?? 0);
 
     return NextResponse.json(
       {

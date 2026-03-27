@@ -40,19 +40,20 @@ export async function GET(req: NextRequest) {
     const earnedTodayRaw = earnedAgg._sum.amount ?? 0;
     const earnedToday = Number.isFinite(earnedTodayRaw) ? Math.max(0, earnedTodayRaw) : 0;
 
-    // 2) rolled today from MetricsDaily (if exists)
+    // 2) rolled = yesterday's MetricsDaily (cron runs at 00:10 UTC, writes previous day)
+    const yesterdayUtc = new Date(dayStart.getTime() - 24 * 60 * 60 * 1000);
     const rolledRow = await prisma.metricsDaily.findFirst({
-      where: { userId: user.id, dayUtc: dayStart },
+      where: { userId: user.id, dayUtc: yesterdayUtc },
       select: { pointsEarned: true },
     });
 
     const rolledRaw = rolledRow?.pointsEarned ?? 0;
     const rolledPoints = Number.isFinite(rolledRaw) ? Math.max(0, rolledRaw) : 0;
 
-    // 3) livePoints = earned - rolled (clamp)
+    // 3) livePoints = earned - rolled (clamp, กัน double-count)
     const livePoints = Math.max(0, earnedToday - rolledPoints);
 
-    // 4) pointsToday = rolled + live
+    // 4) pointsToday = rolled (yesterday) + live (today)
     const pointsToday = rolledPoints + livePoints;
 
     return NextResponse.json({
