@@ -612,7 +612,7 @@ function DashboardInner() {
   }, []);
 
   /* ------------------------------------------------------------------
-     AUTO HEARTBEAT WORKER  
+     AUTO HEARTBEAT WORKER
      ยิง /api/sharing/heartbeat ทุก 15 วินาที เมื่อ sharingActive = true
   ------------------------------------------------------------------ */
   useEffect(() => {
@@ -940,40 +940,40 @@ function DashboardInner() {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
           <KPI
             title="Points Today"
-            value={pointsTodayDisplay != null ? pointsTodayDisplay.toLocaleString() : "—"}
+            value={pointsTodayDisplay != null ? pointsTodayDisplay.toLocaleString() : "-"}
             sub={
               realtime?.ok
                 ? `live (UTC): ${(realtime.livePoints ?? 0).toLocaleString()}  rolled: ${(realtime.rolledPoints ?? 0).toLocaleString()}`
-                : `from daily cap ${summary ? (2000).toLocaleString() : "—"}`
+                : `from daily cap ${summary ? (2000).toLocaleString() : "-"}`
             }
             icon={<Award className="h-5 w-5" />}
             loading={loading && pointsTodayDisplay == null}
           />
           <KPI
             title="Total Points"
-            value={summary ? summary.totalPoints.toLocaleString() : "—"}
-            sub={summary ? `≈ ${summary.slk.toLocaleString()} SLK` : "—"}
+            value={summary ? summary.totalPoints.toLocaleString() : "-"}
+            sub={summary ? `≈ ${summary.slk.toLocaleString()} SLK` : "-"}
             icon={<TrendingUp className="h-5 w-5" />}
             loading={loading}
           />
           <KPI
             title="Est. SLK / Month"
-            value={estimatedSlkPerMonth != null ? `~${estimatedSlkPerMonth.toLocaleString()}` : "—"}
+            value={estimatedSlkPerMonth != null ? `~${estimatedSlkPerMonth.toLocaleString()}` : "-"}
             sub={summary?.avgBandwidthMbps ? `@ ${summary.avgBandwidthMbps.toFixed(1)} Mbps` : "Share to earn"}
             icon={<Coins className="h-5 w-5" />}
             loading={loading}
           />
           <KPI
             title="Uptime Today"
-            value={summary ? `${Number(summary.uptimeHours).toFixed(2)} h` : "—"}
-            sub={summary ? `Goal: ≥ ${Number(summary.goalHours).toFixed(0)} h` : "—"}
+            value={summary ? `${Math.floor(summary.uptimeHours)}h ${Math.round((summary.uptimeHours % 1) * 60)}m` : "-"}
+            sub={summary ? `Goal: ≥ ${Number(summary.goalHours).toFixed(0)} h` : "-"}
             icon={<Activity className="h-5 w-5" />}
             loading={loading}
           />
 
           <KPI
             title="Average Bandwidth"
-            value={summary ? formatBandwidth(summary.avgBandwidthMbps, prefs.units, 3) : "—"}
+            value={summary ? formatBandwidth(summary.avgBandwidthMbps, prefs.units, 3) : "-"}
             sub="Last 15 minutes"
             icon={<Cloud className="h-5 w-5" />}
             loading={loading}
@@ -1019,7 +1019,7 @@ function DashboardInner() {
                   <BarChart4 className="h-4 w-4" /> System Hourly (UTC)
                 </h3>
                 <div className="text-xs text-slate-400">
-                  {sysRangeLabel}: {sysLoading ? "—" : sysDailyTotalFromHourly.toLocaleString()} pts
+                  {sysRangeLabel}: {sysLoading ? "-" : sysDailyTotalFromHourly.toLocaleString()} pts
                 </div>
               </div>
 
@@ -1080,7 +1080,7 @@ function DashboardInner() {
                   <LineIcon className="h-4 w-4" /> System Daily (GLOBAL)
                 </h3>
                 <div className="text-xs text-slate-400">
-                  {sysDailyLabel}: {sysDailyLoading ? "—" : sysDailyTotal.toLocaleString()} pts
+                  {sysDailyLabel}: {sysDailyLoading ? "-" : sysDailyTotal.toLocaleString()} pts
                 </div>
               </div>
               <div className="w-full h-64 rounded-2xl border border-slate-800 bg-slate-950/40 p-2">
@@ -1139,7 +1139,7 @@ function DashboardInner() {
                   <LineIcon className="h-4 w-4" /> User Daily Points
                 </h3>
                 <div className="text-xs text-slate-400">
-                  {userDailyLabel}: {userDailyLoading ? "—" : userDailyTotal.toLocaleString()} pts
+                  {userDailyLabel}: {userDailyLoading ? "-" : userDailyTotal.toLocaleString()} pts
                 </div>
               </div>
               <div className="w-full h-64 rounded-2xl border border-slate-800 bg-slate-950/40 p-2">
@@ -1226,7 +1226,7 @@ function DashboardInner() {
                 </p>
                 <label htmlFor="convert-pts" className="text-xs text-slate-400 flex items-center justify-between mb-1">
                   <span>Points to convert</span>
-                  <span className="text-slate-500">Available: {summary?.totalPoints.toLocaleString() ?? "—"} pts</span>
+                  <span className="text-slate-500">Available: {summary?.totalPoints.toLocaleString() ?? "-"} pts</span>
                 </label>
                 <input
                   id="convert-pts"
@@ -1272,9 +1272,9 @@ function DashboardInner() {
             <CardContent className="p-5">
               <h3 className="text-lg font-semibold mb-3">System Status</h3>
               <StatusItem label="Node" value={pingConnected ? "Connected" : "Disconnected"} positive={pingConnected} />
-              <StatusItem label="Region" value={pingRegion ?? "—"} />
-              <StatusItem label="IP Address" value={pingIp ?? "—"} />
-              <StatusItem label="Client Version" value={pingVersion ?? "—"} />
+              <StatusItem label="Region" value={pingRegion ?? "-"} />
+              <StatusItem label="IP Address" value={pingIp ?? "-"} />
+              <StatusItem label="Client Version" value={pingVersion ?? "-"} />
               <StatusItem label="Latency" value={latency != null ? `~${Math.round(latency)} ms` : "Measuring…"} />
 
               <div className="mt-4">
@@ -1348,9 +1348,9 @@ function DashboardInner() {
                     ? Array.from({ length: 4 }).map((_, i) => (
                         <tr key={`skeleton-${i}`} className="border-t border-slate-800">
                           <td className="py-2 pr-4 text-slate-700">loading…</td>
-                          <td className="py-2 pr-4 text-slate-700">—</td>
-                          <td className="py-2 pr-4 text-slate-700">—</td>
-                          <td className="py-2 pr-4 text-slate-700">—</td>
+                          <td className="py-2 pr-4 text-slate-700">-</td>
+                          <td className="py-2 pr-4 text-slate-700">-</td>
+                          <td className="py-2 pr-4 text-slate-700">-</td>
                         </tr>
                       ))
                     : txPage.map((r, i) => {
@@ -1363,7 +1363,7 @@ function DashboardInner() {
                               <span className={typeDesc.className}>{typeDesc.label}</span>
                             </td>
                             <td className="py-2 pr-4 font-semibold">{formatAmountPts(r.amount)}</td>
-                            <td className="py-2 pr-4 text-slate-400">{note || "—"}</td>
+                            <td className="py-2 pr-4 text-slate-400">{note || "-"}</td>
                           </tr>
                         );
                       })}
@@ -1390,7 +1390,7 @@ function DashboardInner() {
         </Card>
 
         <footer className="text-xs text-slate-500 mt-8">
-          © {new Date().getFullYear()} Solink • Demo build — data via API routes.
+          © {new Date().getFullYear()} Solink • Demo build - data via API routes.
         </footer>
       </div>
     </div>
@@ -1417,8 +1417,8 @@ function KPI({
         <div className="flex items-center justify-between">
           <div>
             <div className="text-slate-400 text-xs uppercase tracking-wide">{title}</div>
-            <div className="text-2xl font-bold mt-1">{loading ? "—" : value}</div>
-            {sub && <div className="text-slate-400 text-xs mt-1">{loading ? "—" : sub}</div>}
+            <div className="text-2xl font-bold mt-1">{loading ? "-" : value}</div>
+            {sub && <div className="text-slate-400 text-xs mt-1">{loading ? "-" : sub}</div>}
           </div>
           <div className="opacity-70">{icon}</div>
         </div>
