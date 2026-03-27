@@ -82,6 +82,7 @@ const PHASES: Phase[] = [
 ];
 
 const SOL_TREASURY = process.env.NEXT_PUBLIC_SOLANA_TREASURY || "11111111111111111111111111111111";
+const LOCKDROP_ESCROW = process.env.NEXT_PUBLIC_LOCKDROP_ESCROW || "";
 
 /* Hydration-safe date format (UTC for everyone) */
 const dateFmt = new Intl.DateTimeFormat("en-GB", {
