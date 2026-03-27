@@ -81,6 +81,9 @@ export async function GET(req: NextRequest) {
       uptimeSeconds += typeof meta?.uptimeSeconds === "number" ? (meta.uptimeSeconds as number) : 60;
     }
 
+    const farmPointsToday = Number(todayAgg._sum.amount ?? 0);
+    const farmPointsTotal = Number(totalAgg._sum.amount ?? 0);
+
     return NextResponse.json({
       ok: true,
       farmPointsToday: Math.max(0, farmPointsToday),
