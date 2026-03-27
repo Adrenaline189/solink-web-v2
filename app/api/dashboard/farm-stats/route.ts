@@ -53,16 +53,6 @@ export async function GET(req: NextRequest) {
       select: { occurredAt: true, meta: true },
     });
 
-    // คำนวณ uptime วันนี้ (นับจากจำนวน events)
-    const todayEvents = await prisma.pointEvent.count({
-      where: {
-        userId: user.id,
-        type: "extension_farm",
-        occurredAt: { gte: dayStart, lt: dayEnd },
-        amount: { gt: 0 },
-      },
-    });
-
     // extension active = มี event ภายใน 5 นาที
     const last5Min = new Date(now.getTime() - 5 * 60 * 1000);
     const recentEvents = await prisma.pointEvent.findFirst({
@@ -73,9 +63,23 @@ export async function GET(req: NextRequest) {
       },
     });
 
-    const farmPointsToday = Number(todayAgg._sum.amount ?? 0);
-    const farmPointsTotal = Number(totalAgg._sum.amount ?? 0);
-    const uptimeSeconds = todayEvents * 60; // ประมาณ 1 event = 1 นาที
+    // คำนวณ uptime จริงจาก meta.uptimeSeconds ของแต่ละ event
+    const todayUptimeEvents = await prisma.pointEvent.findMany({
+      where: {
+        userId: user.id,
+        type: "extension_farm",
+        occurredAt: { gte: dayStart, lt: dayEnd },
+        amount: { gt: 0 },
+      },
+      select: { meta: true },
+    });
+
+    // รวม uptimeSeconds จาก meta (ถ้าไม่มี meta ใช้ 60 วินาทีต่อ event)
+    let uptimeSeconds = 0;
+    for (const ev of todayUptimeEvents) {
+      const meta = ev.meta as Record<string, unknown> | null;
+      uptimeSeconds += typeof meta?.uptimeSeconds === "number" ? (meta.uptimeSeconds as number) : 60;
+    }
 
     return NextResponse.json({
       ok: true,
@@ -119,7 +123,7 @@ export async function POST(req: NextRequest) {
           ruleVersion: "v1",
           dedupeKey,
           occurredAt: now,
-          meta: { source: "simulate", simulated: true },
+          meta: { source: "simulate", simulated: true, uptimeSeconds: 60 },
         },
       });
 
