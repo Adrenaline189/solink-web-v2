@@ -1,8 +1,7 @@
 // app/api/sharing/heartbeat/route.ts
-import { NextResponse } from "next/server";
-import { cookies } from "next/headers";
+import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import crypto from "crypto";
+import { getAuthFromRequest } from "@/lib/auth";
 
 type Body = {
   uptimeSeconds?: number;
@@ -13,28 +12,24 @@ type Body = {
   version?: string | null;
 };
 
-function floorToMinuteUTC(d: Date) {
-  const x = new Date(d);
-  x.setUTCSeconds(0, 0);
-  return x;
-}
-
-function floorToHourUTC(d: Date) {
-  return new Date(
-    Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), d.getUTCHours(), 0, 0, 0)
-  );
-}
-
-function toFiniteNumber(v: any): number | null {
+function toFiniteNumber(v: unknown): number | null {
   const n = Number(v);
   return Number.isFinite(n) ? n : null;
 }
 
+/** Return the start of the current UTC hour (truncated). */
+function floorToHourUTC(d: Date): Date {
+  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), d.getUTCHours(), 0, 0, 0));
+}
+
+function floorToMinuteUTC(d: Date): Date {
+  return new Date(Math.floor(d.getTime() / 60_000) * 60_000);
+}
+
 /**
- * อัปเดต bandwidth sample ลง MetricsHourly (ชั่วโมงปัจจุบัน UTC)
- * - ทำให้ /summary?range=today มี avgBandwidthMbps ได้ทันที (ไม่ติด 0)
- * - ใช้ EMA เพื่อให้กราฟนิ่งขึ้น (ไม่เด้งแรง)
- * - เก็บ region + version ด้วย (จาก heartbeat)
+ * upsertHourlyBandwidthSample — write bandwidth to MetricsHourly every heartbeat.
+ * Uses EMA (alpha=0.2) for smooth average.
+ * Also stores region + version.
  */
 async function upsertHourlyBandwidthSample(args: {
   userId: string;
@@ -44,92 +39,54 @@ async function upsertHourlyBandwidthSample(args: {
   version?: string | null;
 }) {
   const { userId, now, bandwidthSampleMbps, region, version } = args;
+  if (bandwidthSampleMbps == null) return;
+
   const hourUtc = floorToHourUTC(now);
+  const bw = bandwidthSampleMbps;
 
   const existing = await prisma.metricsHourly.findUnique({
-    where: {
-      hourUtc_userId_unique: {
-        hourUtc,
-        userId,
-      },
-    },
+    where: { hourUtc_userId_unique: { hourUtc, userId } },
     select: { id: true, avgBandwidth: true },
   });
 
-  // EMA: new = old*0.8 + sample*0.2
   const alpha = 0.2;
 
   if (!existing) {
     await prisma.metricsHourly.create({
-      data: {
-        hourUtc,
-        userId,
-        pointsEarned: 0,
-        avgBandwidth: bandwidthSampleMbps,
-        region: region ?? null,
-        version: version ?? null,
-      },
+      data: { hourUtc, userId, pointsEarned: 0, avgBandwidth: bw, region: region ?? null, version: version ?? null },
     });
     return;
   }
 
-  const old = typeof existing.avgBandwidth === "number" ? existing.avgBandwidth : null;
-  const bw = bandwidthSampleMbps ?? 0;
-  const next = old == null ? bw : old * (1 - alpha) + bw * alpha;
+  // EMA: new = old*0.8 + sample*0.2
+  const old = existing.avgBandwidth;
+  const next = (old == null ? bw : old * (1 - alpha) + bw * alpha);
 
   await prisma.metricsHourly.update({
     where: { id: existing.id },
-    data: {
-      avgBandwidth: next,
-      region: region ?? null,
-      version: version ?? null,
-    },
+    data: { avgBandwidth: next, region: region ?? null, version: version ?? null },
   });
 }
 
-export async function POST(req: Request) {
+export async function POST(req: NextRequest) {
   try {
-    const cookieStore = cookies();
-
-    const auth = cookieStore.get("solink_auth")?.value;
-    if (!auth) {
-      return NextResponse.json(
-        { ok: true, active: false, reason: "Not authenticated" },
-        { status: 200 }
-      );
+    // Auth: JWT cookie OR ?wallet= query param (CLI mode)
+    const { wallet: jwtWallet } = await getAuthFromRequest(req);
+    let userWallet: string | null = jwtWallet;
+    if (!userWallet) {
+      const urlStr = req.url ?? "";
+      const wp = new URL(urlStr).searchParams.get("wallet");
+      if (wp) userWallet = wp;
     }
-
-    const wallet = cookieStore.get("solink_wallet")?.value?.trim();
-    if (!wallet) {
-      return NextResponse.json({ ok: false, error: "No wallet cookie" }, { status: 401 });
+    if (!userWallet) {
+      return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
     }
-
-    const user = await prisma.user.findFirst({ where: { wallet } });
+    const user = await prisma.user.findFirst({ where: { wallet: userWallet }, select: { id: true, wallet: true } });
     if (!user) {
       return NextResponse.json({ ok: false, error: "User not found" }, { status: 404 });
     }
 
-    // ✅ ต้อง active จริง
-    const sharing = await prisma.sharingState.findUnique({
-      where: { wallet },
-      select: { active: true, updatedAt: true },
-    });
-
-    const active = !!sharing?.active;
-    if (!active) {
-      return NextResponse.json(
-        {
-          ok: true,
-          active: false,
-          reason: "Sharing is paused",
-          debug: { wallet, sharingState: sharing ?? null },
-        },
-        { status: 200 }
-      );
-    }
-
     const body = (await req.json().catch(() => ({}))) as Body;
-
     const uptimeSeconds = Number(body.uptimeSeconds ?? 0);
     const downloadMbps = toFiniteNumber(body.downloadMbps);
     const uploadMbps = toFiniteNumber(body.uploadMbps);
@@ -137,7 +94,6 @@ export async function POST(req: Request) {
     const region = typeof body.region === "string" ? body.region : null;
     const version = typeof body.version === "string" ? body.version : null;
 
-    // ✅ bandwidth sample (เลือก max ระหว่าง down/up เพื่อไม่ทำให้ค่าดูต่ำเกิน)
     const bandwidthSampleMbps =
       downloadMbps == null && uploadMbps == null
         ? null
@@ -145,104 +101,45 @@ export async function POST(req: Request) {
 
     const now = new Date();
 
-    // ✅ สำคัญ: อัปเดต bandwidth ลง MetricsHourly ทุกครั้ง (แม้ uptime ยังไม่ครบ 60 วิ)
-    // เพื่อให้ KPI "Last 15 minutes" (today) ไม่ติด 0
-    await upsertHourlyBandwidthSample({
-      userId: user.id,
-      now,
-      bandwidthSampleMbps,
-      region,
-      version,
-    });
+    // Write bandwidth to MetricsHourly on every heartbeat
+    await upsertHourlyBandwidthSample({ userId: user.id, now, bandwidthSampleMbps, region, version });
 
-    // validate เบาๆ
-    if (!Number.isFinite(uptimeSeconds) || uptimeSeconds <= 0) {
-      return NextResponse.json({ ok: false, error: "uptimeSeconds must be > 0" }, { status: 400 });
-    }
-
-    // ให้แต้ม = bandwidth_Mbps × 0.7 (กันปั่น: สูงสุด 1 ครั้ง/นาที)
-    // เช่น 10 Mbps → 7 pts/นาที, 50 Mbps → 35 pts/นาที, 100 Mbps → 70 pts/นาที
-    // ~10 Mbps จะได้ ~500 SLK/เดือน ตาม pricing page
+    // Earn points: bandwidth_Mbps × 0.7 per minute (cooldown: max 1/min)
     const minutes = Math.max(0, Math.min(1, Math.floor(uptimeSeconds / 60)));
     if (minutes <= 0) {
-      return NextResponse.json(
-        {
-          ok: true,
-          active: true,
-          awarded: 0,
-          reason: "uptimeSeconds < 60",
-          received: { uptimeSeconds, downloadMbps, uploadMbps, latencyMs },
-        },
-        { status: 200 }
-      );
+      return NextResponse.json({ ok: true, active: true, awarded: 0, reason: "uptimeSeconds < 60", received: { uptimeSeconds, downloadMbps, uploadMbps, latencyMs } }, { status: 200 });
     }
 
-    // คำนวณ points จาก bandwidth (ใช้ค่าสูงสุดระหว่าง download/upload)
-    const bw = bandwidthSampleMbps ?? 10; // default 10 Mbps ถ้าไม่มี
-    const pointsPerMinute = Math.round(bw * 0.7); // 1 point ต่อ 1.43 Mbps
-    const awarded = Math.max(1, pointsPerMinute * minutes); // ขั้นต่ำ 1 pt
-
-    const minuteBucket = floorToMinuteUTC(now); // ใช้เป็น occurredAt
+    const bw = bandwidthSampleMbps ?? 10;
+    const pointsPerMinute = Math.round(bw * 0.7);
+    const awarded = Math.max(1, pointsPerMinute * minutes);
+    const minuteBucket = floorToMinuteUTC(now);
     const dedupeKey = `sharing:${user.id}:UPTIME_MINUTE:${minuteBucket.toISOString()}`;
 
-    // กันยิงถี่: ดู event ล่าสุดของ sharing uptime
+    // Check last event for cooldown
     const last = await prisma.pointEvent.findFirst({
-      where: {
-        userId: user.id,
-        type: "UPTIME_MINUTE",
-        source: "sharing",
-      },
+      where: { userId: user.id, type: "UPTIME_MINUTE", source: "sharing" },
       orderBy: { occurredAt: "desc" },
       select: { occurredAt: true },
     });
-
     if (last) {
       const diffSec = (now.getTime() - new Date(last.occurredAt).getTime()) / 1000;
       if (diffSec < 45) {
-        return NextResponse.json(
-          { ok: true, active: true, awarded: 0, reason: `cooldown ${Math.ceil(45 - diffSec)}s` },
-          { status: 200 }
-        );
+        return NextResponse.json({ ok: true, active: true, awarded: 0, reason: `cooldown ${Math.ceil(45 - diffSec)}s` }, { status: 200 });
       }
     }
 
-    // Transaction: create event (idempotent by dedupeKey) + upsert balance
+    // Transaction: create event (idempotent) + upsert balance
     const result = await prisma.$transaction(async (tx) => {
-      // ถ้ามีแล้ว = ไม่ให้ซ้ำ
-      const exists = await tx.pointEvent.findUnique({
-        where: { dedupeKey },
-        select: { id: true },
-      });
-
-      if (exists) {
-        return { duplicate: true, eventId: exists.id, credited: 0 };
-      }
+      const exists = await tx.pointEvent.findUnique({ where: { dedupeKey }, select: { id: true } });
+      if (exists) return { duplicate: true, eventId: exists.id, credited: 0 };
 
       const ev = await tx.pointEvent.create({
         data: {
-          userId: user.id,
-          nodeId: null,
-          type: "UPTIME_MINUTE",
-          amount: awarded,
-          meta: {
-            uptimeSeconds,
-            downloadMbps,
-            uploadMbps,
-            latencyMs,
-            bandwidthSampleMbps,
-            bandwidthMbps: bw,
-            pointsPerMinute,
-            region,
-            version,
-            source: "sharing/heartbeat",
-          },
-          source: "sharing",
-          ruleVersion: "v2",
-          dedupeKey,
-          nonce: crypto.randomUUID(),
-          signatureOk: true,
-          riskScore: 0,
-          occurredAt: minuteBucket,
+          userId: user.id, nodeId: null, type: "UPTIME_MINUTE", amount: awarded,
+          meta: { uptimeSeconds, downloadMbps, uploadMbps, latencyMs, bandwidthSampleMbps, bandwidthMbps: bw, pointsPerMinute, region, version, source: "sharing/heartbeat" },
+          source: "sharing", ruleVersion: "v2", dedupeKey,
+          nonce: crypto.randomUUID(), signatureOk: true, riskScore: 0, occurredAt: minuteBucket,
         },
         select: { id: true },
       });
@@ -257,20 +154,15 @@ export async function POST(req: Request) {
       return { duplicate: false, eventId: ev.id, credited: awarded, balance: bal };
     });
 
-    return NextResponse.json(
-      {
-        ok: true,
-        active: true,
-        awarded: result.credited ?? 0,
-        duplicate: result.duplicate ?? false,
-        eventId: result.eventId,
-        balance: result.balance ?? undefined,
-        received: { uptimeSeconds, downloadMbps, uploadMbps, latencyMs },
-      },
-      { status: 200 }
-    );
-  } catch (e: any) {
-    console.error("[sharing/heartbeat] error:", e);
-    return NextResponse.json({ ok: false, error: e?.message || "Internal server error" }, { status: 500 });
+    return NextResponse.json({
+      ok: true, active: true, awarded: result.credited,
+      reason: result.duplicate ? "duplicate" : undefined,
+      balance: result.balance?.balance,
+      received: { uptimeSeconds, downloadMbps, uploadMbps, latencyMs },
+    });
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error("[sharing/heartbeat]", msg);
+    return NextResponse.json({ ok: false, error: msg }, { status: 500 });
   }
 }
