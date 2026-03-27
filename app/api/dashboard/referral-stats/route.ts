@@ -44,13 +44,11 @@ export async function GET(req: NextRequest) {
 
     // Count referrals (users ที่ถูก refer โดย user นี้)
     // ถ้ายังไม่มี referredBy field → fallback: นับจาก referral events
-    // ปัจจุบันใช้วิธีนับจาก PointEvent type=referral
-    const referralCountAgg = await prisma.pointEvent.aggregate({
+    const referralCountAgg = await prisma.pointEvent.count({
       where: { userId: user.id, type: "referral" },
-      _select: { _count: { select: { id: true } } },
     });
 
-    const referredCount = referralCountAgg._count.id;
+    const referredCount = referralCountAgg;
 
     // Referral code = wallet address (shortened)
     const referralCode = ctx.wallet.slice(0, 8).toUpperCase();
