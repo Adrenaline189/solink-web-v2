@@ -1,5 +1,6 @@
 // app/api/dashboard/convert/route.ts
 import { NextResponse } from "next/server";
+import { getAuthContext } from "@/lib/auth";
 
 const DEFAULT_RATE = 100; // fallback: 100 pts = 1 SLK
 
@@ -20,6 +21,16 @@ type SolinkApiConvertResp = {
 
 export async function POST(req: Request) {
   try {
+    const ctx = await getAuthContext(req);
+    if (!ctx?.wallet) {
+      return NextResponse.json(
+        { ok: false, error: "Unauthorized" },
+        { status: 401 }
+      );
+    }
+
+    const wallet = ctx.wallet;
+
     const body = (await req.json()) as ConvertBody;
     const rawPoints = body.points;
 
@@ -36,17 +47,6 @@ export async function POST(req: Request) {
       return NextResponse.json(
         { ok: false, error: "Points must be greater than zero" },
         { status: 400 }
-      );
-    }
-
-    // 🔐 อ่าน wallet จาก cookie "solink_wallet"
-    const cookieHeader = req.headers.get("cookie") || "";
-    const wallet = parseCookie(cookieHeader)["solink_wallet"] ?? "";
-
-    if (!wallet) {
-      return NextResponse.json(
-        { ok: false, error: "Wallet not found in cookies" },
-        { status: 401 }
       );
     }
 
@@ -145,23 +145,4 @@ export async function POST(req: Request) {
       { status: 500 }
     );
   }
-}
-
-/**
- * util ง่าย ๆ สำหรับอ่าน cookie header → object
- */
-function parseCookie(cookieHeader: string): Record<string, string> {
-  const out: Record<string, string> = {};
-  if (!cookieHeader) return out;
-
-  const parts = cookieHeader.split(";");
-  for (const part of parts) {
-    const [k, ...rest] = part.split("=");
-    if (!k) continue;
-    const key = k.trim();
-    const value = rest.join("=").trim();
-    if (!key) continue;
-    out[key] = decodeURIComponent(value || "");
-  }
-  return out;
 }

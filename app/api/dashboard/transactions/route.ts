@@ -91,12 +91,12 @@ export async function GET(req: Request) {
     const events = await prisma.pointEvent.findMany({
       where: {
         userId: user.id,
-        createdAt: {
+        occurredAt: {
           gte: startUtc,
           lt: endUtc,
         },
       },
-      orderBy: { createdAt: "desc" },
+      orderBy: { occurredAt: "desc" },
       take: 200,
     });
 
@@ -114,7 +114,7 @@ export async function GET(req: Request) {
       }
 
       return {
-        ts: formatUtcLabel(ev.createdAt),
+        ts: formatUtcLabel(ev.occurredAt),
         type: ev.type,
         amount: ev.amount,
         note,
