@@ -1,5 +1,5 @@
 // app/api/dashboard/convert/route.ts
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { getAuthContext } from "@/lib/auth";
 
 const DEFAULT_RATE = 100; // fallback: 100 pts = 1 SLK
@@ -19,7 +19,7 @@ type SolinkApiConvertResp = {
   error?: string;
 };
 
-export async function POST(req: Request) {
+export async function POST(req: NextRequest) {
   try {
     const ctx = await getAuthContext(req);
     if (!ctx?.wallet) {
