@@ -22,32 +22,32 @@ export async function GET(req: NextRequest) {
     const dayStart = startOfUtcDay(now);
     const dayEnd = new Date(dayStart.getTime() + 24 * 60 * 60 * 1000);
 
-    // extension_farm points วันนี้
+    // UPTIME_MINUTE points วันนี้ (real heartbeats from sharing/extension)
     const todayAgg = await prisma.pointEvent.aggregate({
       where: {
         userId: user.id,
-        type: "extension_farm",
+        type: "UPTIME_MINUTE",
         occurredAt: { gte: dayStart, lt: dayEnd },
         amount: { gt: 0 },
       },
       _sum: { amount: true },
     });
 
-    // extension_farm points ทั้งหมด
+    // UPTIME_MINUTE points ทั้งหมด
     const totalAgg = await prisma.pointEvent.aggregate({
       where: {
         userId: user.id,
-        type: "extension_farm",
+        type: "UPTIME_MINUTE",
         amount: { gt: 0 },
       },
       _sum: { amount: true },
     });
 
-    // หา heartbeat ล่าสุดของ extension_farm
+    // หา heartbeat ล่าสุด
     const lastEvent = await prisma.pointEvent.findFirst({
       where: {
         userId: user.id,
-        type: "extension_farm",
+        type: "UPTIME_MINUTE",
       },
       orderBy: { occurredAt: "desc" },
       select: { occurredAt: true, meta: true },
@@ -58,7 +58,7 @@ export async function GET(req: NextRequest) {
     const recentEvents = await prisma.pointEvent.findFirst({
       where: {
         userId: user.id,
-        type: "extension_farm",
+        type: "UPTIME_MINUTE",
         occurredAt: { gte: last5Min },
       },
     });
@@ -67,7 +67,7 @@ export async function GET(req: NextRequest) {
     const todayUptimeEvents = await prisma.pointEvent.findMany({
       where: {
         userId: user.id,
-        type: "extension_farm",
+        type: "UPTIME_MINUTE",
         occurredAt: { gte: dayStart, lt: dayEnd },
         amount: { gt: 0 },
       },
