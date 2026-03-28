@@ -430,8 +430,8 @@ function DashboardInner() {
       // เรียงวันกันหลุด (กัน API/DB ส่งไม่เรียง)
       series.sort((a, b) => a.label.localeCompare(b.label));
 
-      // total
-      const total = series.reduce((s, x) => s + (x.points ?? 0), 0);
+      // total — use todayTotal from API directly
+      const total = typeof json?.todayTotal === "number" ? json.todayTotal : series.reduce((s, x) => s + (x.points ?? 0), 0);
 
       setSysDailySeries(series);
       setSysDailyTotal(total);
