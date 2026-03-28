@@ -1,5 +1,4 @@
 // app/api/dashboard/system-daily/route.ts
-// System-wide daily points — aggregates ALL users' pointEvents per day
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
@@ -45,23 +44,19 @@ export async function GET(req: NextRequest) {
 
     const daysCount = Math.max(1, Math.round((endUtc.getTime() - startUtc.getTime()) / 86_400_000));
 
-    // Group by day using raw SQL (PostgreSQL date_trunc)
-    const rows = await prisma.$queryRaw<{ day_label: string; total: bigint }[]>`
-      SELECT
-        DATE_TRUNC('day', "occurredAt" AT TIME ZONE 'UTC') AS day_label,
-        SUM("amount")::bigint AS total
-      FROM "PointEvent"
-      WHERE "occurredAt" >= ${startUtc}
-        AND "occurredAt" < ${endUtc}
-        AND "amount" > 0
-      GROUP BY 1
-      ORDER BY 1 ASC
-    `;
+    // Fetch all pointEvents in range and group by day in JS
+    const events = await prisma.pointEvent.findMany({
+      where: {
+        occurredAt: { gte: startUtc, lt: endUtc },
+        amount: { gt: 0 },
+      },
+      select: { occurredAt: true, amount: true },
+    });
 
     const dayMap = new Map<string, number>();
-    for (const r of rows) {
-      const label = String(r.day_label).slice(0, 10);
-      dayMap.set(label, Number(r.total));
+    for (const ev of events) {
+      const key = floorUtcDay(new Date(ev.occurredAt)).toISOString().slice(0, 10);
+      dayMap.set(key, (dayMap.get(key) ?? 0) + ev.amount);
     }
 
     const buckets = Array.from({ length: daysCount }).map((_, i) => {
@@ -73,15 +68,7 @@ export async function GET(req: NextRequest) {
     const todayTotal = dayMap.get(day0.toISOString().slice(0, 10)) ?? 0;
 
     return NextResponse.json(
-      {
-        ok: true,
-        range,
-        tz,
-        todayTotal,
-        series: buckets,
-        daily: buckets,
-        days: buckets,
-      },
+      { ok: true, range, tz, todayTotal, series: buckets, daily: buckets, days: buckets },
       { status: 200, headers: { "Cache-Control": "no-store" } }
     );
   } catch (e: unknown) {

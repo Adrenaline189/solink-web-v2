@@ -1,5 +1,4 @@
 // app/api/dashboard/streak/route.ts
-// Calculates current + best streak from pointEvents (no metricsDaily needed)
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { prisma } from "@/lib/prisma";
@@ -27,24 +26,21 @@ export async function GET(_req: NextRequest) {
     since.setUTCFullYear(since.getUTCFullYear() - 1);
     since.setUTCHours(0, 0, 0, 0);
 
-    const rows = await prisma.$queryRaw<{ day_label: Date; total: bigint }[]>`
-      SELECT
-        DATE_TRUNC('day', "occurredAt" AT TIME ZONE 'UTC') AS day_label,
-        SUM("amount")::bigint AS total
-      FROM "PointEvent"
-      WHERE "userId" = ${user.id}
-        AND "occurredAt" >= ${since}
-        AND "amount" > 0
-      GROUP BY 1
-      ORDER BY 1 ASC
-    `;
+    const events = await prisma.pointEvent.findMany({
+      where: {
+        userId: user.id,
+        occurredAt: { gte: since },
+        amount: { gt: 0 },
+      },
+      select: { occurredAt: true, amount: true },
+    });
 
     // Map: "YYYY-MM-DD" -> has points
-    // Prisma 6 returns Date objects for date_trunc, convert to ISO string first
     const dayMap = new Map<string, boolean>();
-    for (const r of rows) {
-      const label = String(r.day_label).slice(0, 10);
-      dayMap.set(label, Number(r.total) > 0);
+    for (const ev of events) {
+      const d = new Date(ev.occurredAt);
+      const key = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
+      if (!dayMap.has(key)) dayMap.set(key, ev.amount > 0);
     }
 
     const today = startOfUtcDay(new Date());
@@ -58,7 +54,7 @@ export async function GET(_req: NextRequest) {
       const d = new Date(
         Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate() - i)
       );
-      const key = d.toISOString().slice(0, 10);
+      const key = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
       const hasPoints = dayMap.get(key) ?? false;
 
       if (hasPoints) {

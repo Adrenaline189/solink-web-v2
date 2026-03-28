@@ -1,5 +1,4 @@
 // app/api/dashboard/daily/route.ts
-// User's daily points — reads from pointEvents grouped by day
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getAuthContext } from "@/lib/auth";
@@ -10,7 +9,6 @@ export async function GET(req: NextRequest) {
     const daysParam = searchParams.get("days") ?? "30";
     const days = Math.min(Math.max(parseInt(daysParam, 10) || 30, 1), 365);
 
-    // Auth: get user from cookie/JWT
     const ctx = await getAuthContext(req);
     const wallet = ctx?.wallet ?? searchParams.get("wallet");
 
@@ -28,34 +26,31 @@ export async function GET(req: NextRequest) {
     fromDate.setUTCDate(fromDate.getUTCDate() - (days - 1));
     fromDate.setUTCHours(0, 0, 0, 0);
 
-    // Group pointEvents by day using raw SQL
-    const rows = await prisma.$queryRaw<{ day_label: string; total: bigint }[]>`
-      SELECT
-        DATE_TRUNC('day', "occurredAt" AT TIME ZONE 'UTC') AS day_label,
-        SUM("amount")::bigint AS total
-      FROM "PointEvent"
-      WHERE "userId" = ${user.id}
-        AND "occurredAt" >= ${fromDate}
-        AND "amount" > 0
-      GROUP BY 1
-      ORDER BY 1 ASC
-    `;
+    // Fetch events and group by day in JS (avoids $queryRaw complexity)
+    const events = await prisma.pointEvent.findMany({
+      where: {
+        userId: user.id,
+        occurredAt: { gte: fromDate },
+        amount: { gt: 0 },
+      },
+      select: { occurredAt: true, amount: true },
+    });
 
     const dayMap = new Map<string, number>();
-    for (const r of rows) {
-      const label = String(r.day_label).slice(0, 10);
-      dayMap.set(label, Number(r.total));
+    for (const ev of events) {
+      const d = new Date(ev.occurredAt);
+      const key = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
+      dayMap.set(key, (dayMap.get(key) ?? 0) + ev.amount);
     }
 
-    // Build full range of days
     const data = [];
     for (let i = 0; i < days; i++) {
       const d = new Date(fromDate);
       d.setUTCDate(d.getUTCDate() + i);
-      const label = d.toISOString().slice(0, 10);
+      const key = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
       data.push({
         dayUtc: d.toISOString(),
-        pointsEarned: dayMap.get(label) ?? 0,
+        pointsEarned: dayMap.get(key) ?? 0,
         uptimePct: 0,
         avgBandwidthMbps: 0,
         qfScore: 0,
