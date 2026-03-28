@@ -1097,7 +1097,9 @@ function DashboardInner() {
                   <LineIcon className="h-4 w-4" /> System Daily (GLOBAL)
                 </h3>
                 <div className="text-xs text-slate-400">
-                  {sysDailyLabel}: {sysDailyLoading ? "-" : sysDailyTotalFromSeries.toLocaleString()} pts
+                  {sysDailyLabel}: {sysDailySeries.length > 0
+                    ? (sysDailySeries[sysDailySeries.length - 1]?.points ?? 0).toLocaleString()
+                    : "-"} pts
                 </div>
               </div>
               <div className="w-full h-64 rounded-2xl border border-slate-800 bg-slate-950/40 p-2">
@@ -1156,7 +1158,9 @@ function DashboardInner() {
                   <LineIcon className="h-4 w-4" /> User Daily Points
                 </h3>
                 <div className="text-xs text-slate-400">
-                  {userDailyLabel}: {userDailyLoading ? "-" : userDailyTotalFromSeries.toLocaleString()} pts
+                  {userDailyLabel}: {userDaily.length > 0
+                    ? (userDaily[userDaily.length - 1]?.points ?? 0).toLocaleString()
+                    : "-"} pts
                 </div>
               </div>
               <div className="w-full h-64 rounded-2xl border border-slate-800 bg-slate-950/40 p-2">
