@@ -714,7 +714,23 @@ function DashboardInner() {
   const sysPeak = useMemo(() => sysRows.reduce((m, r) => Math.max(m, r.points), 0), [sysRows]);
 
   const userDailyTotal = useMemo(() => userDaily.reduce((sum, d) => sum + d.points, 0), [userDaily]);
-  const userDailyTodayTotal = 0; // updated by loadUserDailyRange
+  const userDailyTodayTotal = 0; // fallback
+
+  // sysDailyTotal computed from series — more reliable than separate state
+  const sysDailyTotalFromSeries = useMemo(() => {
+    if (!sysDailySeries.length) return 0;
+    const today = new Date().toISOString().slice(0, 10);
+    const todayBucket = sysDailySeries.find(b => b.label === today);
+    return todayBucket ? todayBucket.points : sysDailySeries[sysDailySeries.length - 1]?.points ?? 0;
+  }, [sysDailySeries]);
+
+  // userDailyTotalFromSeries: today's points from userDaily series
+  const userDailyTotalFromSeries = useMemo(() => {
+    if (!userDaily.length) return 0;
+    const today = new Date().toISOString().slice(0, 10);
+    const todayBucket = userDaily.find(d => d.label === today);
+    return todayBucket ? todayBucket.points : 0;
+  }, [userDaily]);
 
   // latency chart data
   const latencyChartData = useMemo(
@@ -1081,7 +1097,7 @@ function DashboardInner() {
                   <LineIcon className="h-4 w-4" /> System Daily (GLOBAL)
                 </h3>
                 <div className="text-xs text-slate-400">
-                  {sysDailyLabel}: {sysDailyLoading ? "-" : sysDailyTotal.toLocaleString()} pts
+                  {sysDailyLabel}: {sysDailyLoading ? "-" : sysDailyTotalFromSeries.toLocaleString()} pts
                 </div>
               </div>
               <div className="w-full h-64 rounded-2xl border border-slate-800 bg-slate-950/40 p-2">
@@ -1140,7 +1156,7 @@ function DashboardInner() {
                   <LineIcon className="h-4 w-4" /> User Daily Points
                 </h3>
                 <div className="text-xs text-slate-400">
-                  {userDailyLabel}: {userDailyLoading ? "-" : userDailyTotal.toLocaleString()} pts
+                  {userDailyLabel}: {userDailyLoading ? "-" : userDailyTotalFromSeries.toLocaleString()} pts
                 </div>
               </div>
               <div className="w-full h-64 rounded-2xl border border-slate-800 bg-slate-950/40 p-2">
