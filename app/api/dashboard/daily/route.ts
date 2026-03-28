@@ -58,7 +58,11 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    return NextResponse.json({ ok: true, userId: user.id, days, data }, { status: 200 });
+    // today's points from dayMap
+    const todayKey = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}-${String(now.getUTCDate()).padStart(2, "0")}`;
+    const todayTotal = dayMap.get(todayKey) ?? 0;
+
+    return NextResponse.json({ ok: true, userId: user.id, days, data, todayTotal }, { status: 200 });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error("[GET /api/dashboard/daily] error", msg);

@@ -714,6 +714,7 @@ function DashboardInner() {
   const sysPeak = useMemo(() => sysRows.reduce((m, r) => Math.max(m, r.points), 0), [sysRows]);
 
   const userDailyTotal = useMemo(() => userDaily.reduce((sum, d) => sum + d.points, 0), [userDaily]);
+  const userDailyTodayTotal = 0; // updated by loadUserDailyRange
 
   // latency chart data
   const latencyChartData = useMemo(
