@@ -436,6 +436,7 @@ function DashboardInner() {
       setSysDailySeries(series);
       setSysDailyTotal(total);
       setSysDailyError(null);
+      console.log("[system-daily] loaded", series.length, "buckets, last points:", series[series.length-1]?.points, "total from API:", json?.todayTotal);
     } catch (e: any) {
       console.error("system-daily error:", e);
       setSysDailyError(e?.message || "Failed to fetch system daily stats");
@@ -534,6 +535,7 @@ function DashboardInner() {
             .sort((a, b) => (a!.label as string).localeCompare(b!.label as string));
 
           setUserDaily(cooked as any);
+          console.log("[user-daily] loaded", cooked.length, "buckets, last:", JSON.stringify(cooked[cooked.length-1]));
         }
       } catch (e: any) {
         console.error("user-daily fetch error:", e);
