@@ -1,8 +1,9 @@
-import { NextResponse } from "next/server";
+// app/api/dashboard/system-daily/route.ts
+// System-wide daily points — aggregates ALL users' pointEvents per day
+import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
-export const revalidate = 0;
 
 type DashboardRange = "today" | "7d" | "30d";
 
@@ -19,12 +20,7 @@ function addDaysUtc(d: Date, days: number) {
   return new Date(d.getTime() + days * 86_400_000);
 }
 
-function clamp0(n: any) {
-  const v = Number(n ?? 0);
-  return Number.isFinite(v) ? Math.max(0, v) : 0;
-}
-
-export async function GET(req: Request) {
+export async function GET(req: NextRequest) {
   try {
     const url = new URL(req.url);
     const range = getRange(url.searchParams.get("range"));
@@ -48,46 +44,32 @@ export async function GET(req: Request) {
     }
 
     const daysCount = Math.max(1, Math.round((endUtc.getTime() - startUtc.getTime()) / 86_400_000));
+
+    // Group by day using raw SQL (PostgreSQL date_trunc)
+    const rows = await prisma.$queryRaw<{ day_label: string; total: bigint }[]>`
+      SELECT
+        DATE_TRUNC('day', "occurredAt" AT TIME ZONE 'UTC') AS day_label,
+        SUM("amount")::bigint AS total
+      FROM "PointEvent"
+      WHERE "occurredAt" >= ${startUtc}
+        AND "occurredAt" < ${endUtc}
+        AND "amount" > 0
+      GROUP BY 1
+      ORDER BY 1 ASC
+    `;
+
+    const dayMap = new Map<string, number>();
+    for (const r of rows) {
+      dayMap.set(r.day_label.slice(0, 10), Number(r.total));
+    }
+
     const buckets = Array.from({ length: daysCount }).map((_, i) => {
       const d = addDaysUtc(startUtc, i);
-      const iso = d.toISOString();
-      return { dayUtc: iso, label: iso.slice(0, 10), points: 0, source: "metrics_daily" as const };
+      const label = d.toISOString().slice(0, 10);
+      return { dayUtc: d.toISOString(), label, points: dayMap.get(label) ?? 0 };
     });
 
-    // 1) past days: read from MetricsDaily (userId = "system")
-    const pastRows = await prisma.metricsDaily.findMany({
-      where: {
-        dayUtc: { gte: startUtc, lt: day0 },
-        userId: "system",
-      },
-      orderBy: { dayUtc: "asc" },
-      select: { dayUtc: true, pointsEarned: true },
-    });
-
-    const pastMap = new Map<string, number>();
-    for (const r of pastRows) pastMap.set(floorUtcDay(r.dayUtc).toISOString(), clamp0(r.pointsEarned));
-
-    // 2) today: aggregate from MetricsHourly (userId = "system") — live, not rolled yet
-    const todayHourly = await prisma.metricsHourly.findMany({
-      where: {
-        hourUtc: { gte: day0, lt: endUtc },
-        userId: "system",
-      },
-      select: { pointsEarned: true },
-    });
-    const todayTotal = clamp0(todayHourly.reduce((s, r) => s + clamp0(r.pointsEarned), 0));
-
-    // fill buckets
-    for (const b of buckets) {
-      const key = b.dayUtc;
-      if (key === day0.toISOString()) {
-        // today: from hourly aggregate
-        b.points = todayTotal;
-      } else {
-        // past: from daily rollup
-        b.points = clamp0(pastMap.get(key) ?? 0);
-      }
-    }
+    const todayTotal = dayMap.get(day0.toISOString().slice(0, 10)) ?? 0;
 
     return NextResponse.json(
       {
@@ -95,23 +77,15 @@ export async function GET(req: Request) {
         range,
         tz,
         todayTotal,
-
-        // ✅ UI-friendly
-        series: buckets.map((x) => ({ dayUtc: x.dayUtc, label: x.label, points: x.points })),
-
-        // ✅ compat
-        daily: buckets.map((x) => ({ dayUtc: x.dayUtc, label: x.label, pointsEarned: x.points })),
-
-        // (ถ้าคุณมี UI เก่าที่เรียก days)
-        days: buckets.map((x) => ({ dayUtc: x.dayUtc, label: x.label, pointsEarned: x.points })),
+        series: buckets,
+        daily: buckets,
+        days: buckets,
       },
       { status: 200, headers: { "Cache-Control": "no-store" } }
     );
-  } catch (e: any) {
-    console.error("[dashboard/system-daily] error:", e);
-    return NextResponse.json(
-      { ok: false, error: e?.message || "Internal server error" },
-      { status: 500, headers: { "Cache-Control": "no-store" } }
-    );
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error("[dashboard/system-daily]", msg);
+    return NextResponse.json({ ok: false, error: msg }, { status: 500, headers: { "Cache-Control": "no-store" } });
   }
 }

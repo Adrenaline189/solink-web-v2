@@ -1,74 +1,67 @@
 // app/api/dashboard/streak/route.ts
+// Calculates current + best streak from pointEvents (no metricsDaily needed)
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { prisma } from "@/lib/prisma";
-
 
 function bad(msg: string, status = 400) {
   return NextResponse.json({ ok: false, error: msg }, { status });
 }
 
 function startOfUtcDay(d: Date) {
-  const x = new Date(d);
-  x.setUTCHours(0, 0, 0, 0);
-  return x;
+  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 0, 0, 0, 0));
 }
 
 export async function GET(_req: NextRequest) {
   try {
-    const cookieWallet = cookies().get("solink_wallet")?.value;
+    const cookieStore = cookies();
+    const cookieWallet = cookieStore.get("solink_wallet")?.value;
     const wallet = (cookieWallet || "").trim();
     if (!wallet) return bad("wallet cookie required", 401);
 
-    const user = await prisma.user.findUnique({
-      where: { wallet },
-      select: { id: true },
-    });
+    const user = await prisma.user.findUnique({ where: { wallet }, select: { id: true } });
     if (!user) return bad("user not found for this wallet", 404);
 
-    // ดึง MetricsDaily ย้อนหลังสูงสุด 1 ปี
+    // Get daily point totals from pointEvents (last 365 days)
     const since = new Date();
     since.setUTCFullYear(since.getUTCFullYear() - 1);
+    since.setUTCHours(0, 0, 0, 0);
 
-    const rows = await prisma.metricsDaily.findMany({
-      where: {
-        userId: user.id,
-        dayUtc: { gte: since },
-      },
-      orderBy: { dayUtc: "desc" },
-      select: { dayUtc: true, pointsEarned: true },
-    });
+    const rows = await prisma.$queryRaw<{ day_label: string; total: bigint }[]>`
+      SELECT
+        DATE_TRUNC('day', "occurredAt" AT TIME ZONE 'UTC') AS day_label,
+        SUM("amount")::bigint AS total
+      FROM "PointEvent"
+      WHERE "userId" = ${user.id}
+        AND "occurredAt" >= ${since}
+        AND "amount" > 0
+      GROUP BY 1
+      ORDER BY 1 ASC
+    `;
 
-    // map: "YYYY-MM-DD" -> points
-    const map = new Map<string, number>();
+    // Map: "YYYY-MM-DD" -> has points
+    const dayMap = new Map<string, boolean>();
     for (const r of rows) {
-      const key = r.dayUtc.toISOString().slice(0, 10);
-      map.set(key, r.pointsEarned);
+      dayMap.set(r.day_label.slice(0, 10), Number(r.total) > 0);
     }
 
     const today = startOfUtcDay(new Date());
 
     let current = 0;
     let best = 0;
-
     let streak = 0;
     let currentRecorded = false;
 
     for (let i = 0; i < 365; i++) {
       const d = new Date(
-        Date.UTC(
-          today.getUTCFullYear(),
-          today.getUTCMonth(),
-          today.getUTCDate() - i
-        )
+        Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate() - i)
       );
       const key = d.toISOString().slice(0, 10);
-      const pts = map.get(key) ?? 0;
+      const hasPoints = dayMap.get(key) ?? false;
 
-      if (pts > 0) {
+      if (hasPoints) {
         streak++;
       } else {
-        // เจอวันแต้ม = 0 → ปิด streak ชุดนี้
         if (!currentRecorded) {
           current = streak;
           currentRecorded = true;
@@ -78,22 +71,15 @@ export async function GET(_req: NextRequest) {
       }
     }
 
-    // เผื่อกรณียาวต่อเนื่องยาวถึงย้อนหลังสุด
     if (!currentRecorded) {
       current = streak;
     }
     if (streak > best) best = streak;
 
-    return NextResponse.json({
-      ok: true,
-      current,
-      best,
-    });
-  } catch (e: any) {
-    console.error("streak error:", e);
-    return NextResponse.json(
-      { ok: false, error: e?.message ?? "internal error" },
-      { status: 500 }
-    );
+    return NextResponse.json({ ok: true, current, best });
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error("streak error:", msg);
+    return NextResponse.json({ ok: false, error: msg }, { status: 500 });
   }
 }
