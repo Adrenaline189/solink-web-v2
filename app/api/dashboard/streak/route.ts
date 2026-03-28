@@ -43,9 +43,7 @@ export async function GET(_req: NextRequest) {
     // Prisma 6 returns Date objects for date_trunc, convert to ISO string first
     const dayMap = new Map<string, boolean>();
     for (const r of rows) {
-      const label = r.day_label instanceof Date
-        ? r.day_label.toISOString().slice(0, 10)
-        : String(r.day_label).slice(0, 10);
+      const label = String(r.day_label).slice(0, 10);
       dayMap.set(label, Number(r.total) > 0);
     }
 

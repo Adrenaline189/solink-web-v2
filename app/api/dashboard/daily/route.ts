@@ -43,9 +43,7 @@ export async function GET(req: NextRequest) {
 
     const dayMap = new Map<string, number>();
     for (const r of rows) {
-      const label = r.day_label instanceof Date
-        ? r.day_label.toISOString().slice(0, 10)
-        : String(r.day_label).slice(0, 10);
+      const label = String(r.day_label).slice(0, 10);
       dayMap.set(label, Number(r.total));
     }
 
