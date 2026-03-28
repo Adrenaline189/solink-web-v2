@@ -27,7 +27,7 @@ export async function GET(_req: NextRequest) {
     since.setUTCFullYear(since.getUTCFullYear() - 1);
     since.setUTCHours(0, 0, 0, 0);
 
-    const rows = await prisma.$queryRaw<{ day_label: string; total: bigint }[]>`
+    const rows = await prisma.$queryRaw<{ day_label: Date; total: bigint }[]>`
       SELECT
         DATE_TRUNC('day', "occurredAt" AT TIME ZONE 'UTC') AS day_label,
         SUM("amount")::bigint AS total
@@ -40,9 +40,13 @@ export async function GET(_req: NextRequest) {
     `;
 
     // Map: "YYYY-MM-DD" -> has points
+    // Prisma 6 returns Date objects for date_trunc, convert to ISO string first
     const dayMap = new Map<string, boolean>();
     for (const r of rows) {
-      dayMap.set(r.day_label.slice(0, 10), Number(r.total) > 0);
+      const label = r.day_label instanceof Date
+        ? r.day_label.toISOString().slice(0, 10)
+        : String(r.day_label).slice(0, 10);
+      dayMap.set(label, Number(r.total) > 0);
     }
 
     const today = startOfUtcDay(new Date());
