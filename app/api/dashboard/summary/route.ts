@@ -146,18 +146,19 @@ export async function GET(req: NextRequest) {
         }
       }
     } else {
-      const md = await prisma.metricsDaily.findMany({
+      // 7d/30d: ใช้ metricsHourly ย้อนหลัง (metricsDaily ถูก reset)
+      const mhList = await prisma.metricsHourly.findMany({
         where: {
           userId: user.id,
-          dayUtc: { gte: rangeStart, lt: dayEnd },
+          hourUtc: { gte: rangeStart, lt: dayEnd },
           avgBandwidth: { not: null },
         },
         select: { avgBandwidth: true },
-        orderBy: { dayUtc: "desc" },
-        take: days,
+        orderBy: { hourUtc: "desc" },
+        take: days * 24,
       });
 
-      const nums = md
+      const nums = mhList
         .map((x) => x.avgBandwidth)
         .filter((x): x is number => typeof x === "number" && Number.isFinite(x));
 
@@ -183,61 +184,29 @@ export async function GET(req: NextRequest) {
 
     // --------------------------
     // qf / trust / region / version
+    // metricsDaily ถูก reset แล้ว — ใช้ fallback values
     // --------------------------
-    const mdToday = await prisma.metricsDaily.findUnique({
-      where: {
-        dayUtc_userId_unique: {
-          dayUtc: dayStart,
-          userId: user.id,
-        },
-      },
-      select: {
-        uptimePct: true,
-        qfScore: true,
-        trustScore: true,
-        region: true,
-        version: true,
-        avgBandwidth: true,
-      },
-    });
-
     const node = await prisma.node.findFirst({
       where: { userId: user.id },
       orderBy: { updatedAt: "desc" },
       select: { region: true, trustScore: true },
     });
 
-    const uptimePct = Number.isFinite(Number(mdToday?.uptimePct ?? 0))
-      ? Number(mdToday?.uptimePct ?? 0)
-      : 0;
-
+    const uptimePct = Math.min(100, (uptimeHours / goalHours) * 100);
     const trustFromNode =
       node?.trustScore != null && Number.isFinite(Number(node.trustScore))
         ? Number(node.trustScore) * 100
         : 0;
-
-    const trust = clamp(
-      Math.round(Number(mdToday?.trustScore ?? trustFromNode ?? 0)),
-      0,
-      100
-    );
-
-    const bwForQf = Number(
-      mdToday?.avgBandwidth != null && Number.isFinite(mdToday.avgBandwidth)
-        ? mdToday.avgBandwidth
-        : avgBandwidthMbps
-    );
-
+    const trust = clamp(trustFromNode, 0, 100);
+    const bwForQf = avgBandwidthMbps;
     const qfFallback = clamp(
       Math.round(uptimePct * 0.6 + clamp(bwForQf, 0, 100) * 0.4),
       0,
       100
     );
-
-    const qf = clamp(Math.round(Number(mdToday?.qfScore ?? qfFallback ?? 0)), 0, 100);
-
-    const region = mdToday?.region ?? node?.region ?? null;
-    const version = mdToday?.version ?? null;
+    const qf = clamp(qfFallback, 0, 100);
+    const region = node?.region ?? null;
+    const version = null;
 
     // ip จาก headers
     const h = headers();
