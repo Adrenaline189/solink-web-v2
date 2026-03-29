@@ -1099,7 +1099,7 @@ function DashboardInner() {
                   <LineIcon className="h-4 w-4" /> System Daily (GLOBAL)
                 </h3>
                 <div className="text-xs text-slate-400">
-                  {sysDailyLabel}: {sysDailyLoading ? "-" : sysDailyTotal.toLocaleString()} pts
+                  {sysDailyLabel}: {sysDailyLoading ? "-" : `${sysDailyTotal.toLocaleString()} pts (${sysDailySeries.length} buckets)`}
                 </div>
               </div>
               <div className="w-full h-64 rounded-2xl border border-slate-800 bg-slate-950/40 p-2">
@@ -1113,7 +1113,7 @@ function DashboardInner() {
                   </div>
                 ) : (
                   <ResponsiveContainer width="100%" height="100%">
-                    <AreaChart data={sysDailySeries} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+                    <AreaChart data={sysDailySeries} margin={{ top: 8, right: 8, left: 0, bottom: 0 }} key={`sysdaily-${sysDailySeries.length}`}>
                       <defs>
                         <linearGradient id="sysDailyG" x1="0" y1="0" x2="0" y2="1">
                           <stop offset="5%" stopColor="#22c55e" stopOpacity={0.35} />
