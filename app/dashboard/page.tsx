@@ -1099,9 +1099,7 @@ function DashboardInner() {
                   <LineIcon className="h-4 w-4" /> System Daily (GLOBAL)
                 </h3>
                 <div className="text-xs text-slate-400">
-                  {sysDailyLabel}: {sysDailySeries.length > 0
-                    ? sysDailySeries.reduce((s, x) => s + x.points, 0).toLocaleString()
-                    : "-"} pts
+                  {sysDailyLabel}: {sysDailyLoading ? "-" : sysDailyTotal.toLocaleString()} pts
                 </div>
               </div>
               <div className="w-full h-64 rounded-2xl border border-slate-800 bg-slate-950/40 p-2">
