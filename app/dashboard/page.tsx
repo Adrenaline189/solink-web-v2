@@ -1122,7 +1122,7 @@ function DashboardInner() {
                       </defs>
                       <CartesianGrid strokeDasharray="3 3" vertical={false} />
                       <XAxis dataKey="label" tick={{ fontSize: 10 }} interval={0} />
-                      <YAxis allowDecimals={false} />
+                      <YAxis allowDecimals={false} domain={[0, (dataMax: number) => Math.max(dataMax * 1.2, 600)]} />
                       <Tooltip
                         cursor={false}
                         contentStyle={{
