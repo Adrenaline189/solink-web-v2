@@ -1113,7 +1113,13 @@ function DashboardInner() {
                   </div>
                 ) : (
                   <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={sysDailySeries} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+                    <AreaChart data={sysDailySeries} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+                      <defs>
+                        <linearGradient id="sysDailyG" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="#22c55e" stopOpacity={0.35} />
+                          <stop offset="95%" stopColor="#22c55e" stopOpacity={0.05} />
+                        </linearGradient>
+                      </defs>
                       <CartesianGrid strokeDasharray="3 3" vertical={false} />
                       <XAxis dataKey="label" tick={{ fontSize: 10 }} interval={0} />
                       <YAxis allowDecimals={false} />
@@ -1129,8 +1135,8 @@ function DashboardInner() {
                         itemStyle={{ color: "#22c55e", fontSize: 12 }}
                         formatter={(v: number) => [`${v.toLocaleString()} pts`, "System daily"]}
                       />
-                      <Bar dataKey="points" radius={[6, 6, 0, 0]} fill="#22c55e" />
-                    </BarChart>
+                      <Area type="monotone" dataKey="points" stroke="#22c55e" strokeWidth={2} fill="url(#sysDailyG)" />
+                    </AreaChart>
                   </ResponsiveContainer>
                 )}
               </div>
