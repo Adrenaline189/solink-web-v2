@@ -1117,8 +1117,8 @@ function DashboardInner() {
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={sysDailySeries} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
                       <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                      <XAxis dataKey="label" tick={{ fontSize: 10 }} />
-                      <YAxis allowDecimals={false} />
+                      <XAxis dataKey="label" tick={{ fontSize: 10 }} interval={0} />
+                      <YAxis allowDecimals={false} domain={[0, "dataMax + 500"]} />
                       <Tooltip
                         cursor={false}
                         contentStyle={{
