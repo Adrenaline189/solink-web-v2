@@ -1116,7 +1116,7 @@ function DashboardInner() {
                     <BarChart data={sysDailySeries} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
                       <CartesianGrid strokeDasharray="3 3" vertical={false} />
                       <XAxis dataKey="label" tick={{ fontSize: 10 }} interval={0} />
-                      <YAxis allowDecimals={false} domain={[0, "dataMax + 500"]} />
+                      <YAxis allowDecimals={false} domain={[0, (dataMax: number) => Math.max(dataMax * 1.2, 500)]} />
                       <Tooltip
                         cursor={false}
                         contentStyle={{
