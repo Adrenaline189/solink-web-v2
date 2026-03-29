@@ -1100,7 +1100,7 @@ function DashboardInner() {
                 </h3>
                 <div className="text-xs text-slate-400">
                   {sysDailyLabel}: {sysDailySeries.length > 0
-                    ? (sysDailySeries[sysDailySeries.length - 1]?.points ?? 0).toLocaleString()
+                    ? sysDailySeries.reduce((s, x) => s + x.points, 0).toLocaleString()
                     : "-"} pts
                 </div>
               </div>
@@ -1161,7 +1161,7 @@ function DashboardInner() {
                 </h3>
                 <div className="text-xs text-slate-400">
                   {userDailyLabel}: {userDaily.length > 0
-                    ? (userDaily[userDaily.length - 1]?.points ?? 0).toLocaleString()
+                    ? userDaily.reduce((s, x) => s + x.points, 0).toLocaleString()
                     : "-"} pts
                 </div>
               </div>
