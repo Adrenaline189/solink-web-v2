@@ -86,28 +86,12 @@ export async function rollupDay(dayInput?: Date): Promise<RollupDayResult> {
       perUser.reduce<number>((s, x) => s + (typeof x._sum.amount === "number" ? x._sum.amount : Number(x._sum.amount ?? 0)), 0)
     );
 
-    await tx.metricsDaily.upsert({
-      where: {
-        dayUtc_userId_unique: {
-          dayUtc,
-          userId: null,
-        },
-      },
-      update: {
-        pointsEarned: totalPoints,
-      },
-      create: {
-        dayUtc,
-        userId: null,
-        pointsEarned: totalPoints,
-        uptimePct: null,
-        avgBandwidth: null,
-        qfScore: null,
-        trustScore: null,
-        region: null,
-        version: null,
-      },
-    });
+    // 3) เขียน MetricsDaily ของ system (รวมทุก user) ผ่าน upsertRaw
+    await tx.$executeRawUnsafe(`
+      INSERT INTO "MetricsDaily" ("id", "dayUtc", "userId", "pointsEarned", "uptimePct", "avgBandwidth", "qfScore", "trustScore", "createdAt", "region", "version")
+      VALUES (gen_random_uuid(), $1, NULL, $2, NULL, NULL, NULL, NULL, NOW(), NULL, NULL)
+      ON CONFLICT ("dayUtc", "userId") DO UPDATE SET "pointsEarned" = $2
+    `, dayUtc, totalPoints);
 
     return { dayUtc, users: perUser.length } satisfies RollupDayResult;
   });

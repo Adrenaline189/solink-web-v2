@@ -79,28 +79,11 @@ export async function rollupHourPoints(hourInput?: Date): Promise<RollupHourResu
     const totalRaw = perUser.reduce((s, x) => s + (x._sum.amount ?? 0), 0);
     const totalPoints = Number.isFinite(totalRaw) ? Math.max(0, totalRaw) : 0;
 
-    await tx.metricsHourly.upsert({
-      where: {
-        hourUtc_userId_unique: {
-          hourUtc,
-          userId: null,
-        },
-      },
-      update: { pointsEarned: totalPoints },
-      create: {
-        hourUtc,
-        userId: null,
-        pointsEarned: totalPoints,
-
-        uptimePct: null,
-        avgBandwidth: null,
-        qfScore: null,
-        trustScore: null,
-
-        region: null,
-        version: null,
-      },
-    });
+    await tx.$executeRawUnsafe(`
+      INSERT INTO "MetricsHourly" ("id", "hourUtc", "userId", "pointsEarned", "uptimePct", "avgBandwidth", "qfScore", "trustScore", "createdAt", "region", "version")
+      VALUES (gen_random_uuid(), $1, NULL, $2, NULL, NULL, NULL, NULL, NOW(), NULL, NULL)
+      ON CONFLICT ("hourUtc", "userId") DO UPDATE SET "pointsEarned" = $2
+    `, hourUtc, totalPoints);
 
     return {
       hourUtc,
