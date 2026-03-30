@@ -176,20 +176,6 @@ Future milestones extend this with on-chain verification.
 
 ---
 
-## 💰 Grant Budget (Estimate)
-
-**Requested:** USD $25,000
-
-| Category | Allocation |
-|--------|------------|
-| Solana program development | $10,000 |
-| Backend & verifier systems | $7,000 |
-| Security & testing | $4,000 |
-| Infrastructure & monitoring | $2,000 |
-| Community pilots | $2,000 |
-
----
-
 ## 🌐 Open Source Commitment
 
 - Core Solana program will be open source
