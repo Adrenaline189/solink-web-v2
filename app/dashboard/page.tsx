@@ -1045,7 +1045,23 @@ function DashboardInner() {
 
               <div className="w-full h-72 rounded-2xl border border-slate-800 bg-slate-950/40 p-2">
                 {sysLoading ? (
-                  <div className="flex h-full items-center justify-center text-slate-500">Loading…</div>
+                  <div className="w-full h-full flex flex-col gap-3 animate-pulse">
+                    <div className="flex items-end gap-1 h-full px-2">
+                      <div className="flex-1 bg-slate-800 rounded-t" style={{ height: "20%" }} />
+                      <div className="flex-1 bg-slate-800 rounded-t" style={{ height: "45%" }} />
+                      <div className="flex-1 bg-slate-800 rounded-t" style={{ height: "30%" }} />
+                      <div className="flex-1 bg-slate-800 rounded-t" style={{ height: "60%" }} />
+                      <div className="flex-1 bg-slate-800 rounded-t" style={{ height: "40%" }} />
+                      <div className="flex-1 bg-slate-800 rounded-t" style={{ height: "75%" }} />
+                      <div className="flex-1 bg-slate-800 rounded-t" style={{ height: "50%" }} />
+                      <div className="flex-1 bg-slate-800 rounded-t" style={{ height: "35%" }} />
+                      <div className="flex-1 bg-slate-800 rounded-t" style={{ height: "85%" }} />
+                      <div className="flex-1 bg-slate-800 rounded-t" style={{ height: "55%" }} />
+                      <div className="flex-1 bg-slate-800 rounded-t" style={{ height: "70%" }} />
+                      <div className="flex-1 bg-slate-800 rounded-t" style={{ height: "30%" }} />
+                    </div>
+                    <div className="h-3 bg-slate-800 rounded w-24 mx-auto" />
+                  </div>
                 ) : sysError ? (
                   <div className="text-rose-400">{sysError}</div>
                 ) : sysRows.length === 0 ? (
