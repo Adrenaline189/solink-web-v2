@@ -99,7 +99,7 @@ export default function SystemDailyChart({ range }: { range: string }) {
         <YAxis
           allowDecimals={false}
           domain={[0, Math.ceil(maxPoints * 1.2)]}
-          tickFormatter={(v) => (v >= 1000 ? `${(v / 1000).toFixed(0)}k` : v)}
+          hide
         />
         <Tooltip
           cursor={{ fill: "rgba(148,163,184,0.15)" }}
