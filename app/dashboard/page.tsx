@@ -1113,18 +1113,12 @@ function DashboardInner() {
                   </div>
                 ) : (
                   <ResponsiveContainer width="100%" height="100%">
-                    <AreaChart data={sysDailySeries} margin={{ top: 8, right: 8, left: 0, bottom: 0 }} key={`sysdaily-${sysDailySeries.length}`}>
-                      <defs>
-                        <linearGradient id="sysDailyG" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor="#22c55e" stopOpacity={0.35} />
-                          <stop offset="95%" stopColor="#22c55e" stopOpacity={0.05} />
-                        </linearGradient>
-                      </defs>
+                    <BarChart data={sysDailySeries} margin={{ top: 8, right: 8, left: 0, bottom: 0 }} key={`sysdaily-${sysDailySeries.length}`}>
                       <CartesianGrid strokeDasharray="3 3" vertical={false} />
                       <XAxis dataKey="label" tick={{ fontSize: 10 }} interval={0} />
-                      <YAxis allowDecimals={false} domain={[0, (dataMax: number) => Math.max(dataMax * 1.2, 600)]} />
+                      <YAxis allowDecimals={false} domain={[0, (dataMax: number) => dataMax * 1.2]} />
                       <Tooltip
-                        cursor={false}
+                        cursor={{ fill: "rgba(148,163,184,0.2)" }}
                         contentStyle={{
                           backgroundColor: "rgba(15,23,42,0.96)",
                           border: "1px solid rgba(148,163,184,0.5)",
@@ -1133,10 +1127,10 @@ function DashboardInner() {
                         }}
                         labelStyle={{ color: "#e5e7eb", fontSize: 12 }}
                         itemStyle={{ color: "#22c55e", fontSize: 12 }}
-                        formatter={(v: number) => [`${v.toLocaleString()} pts`, "System daily"]}
+                        formatter={(v: number) => [`${v.toLocaleString()} pts`, "System"]}
                       />
-                      <Area type="monotone" dataKey="points" stroke="#22c55e" strokeWidth={2} fill="url(#sysDailyG)" />
-                    </AreaChart>
+                      <Bar dataKey="points" fill="#22c55e" radius={[4, 4, 0, 0]} />
+                    </BarChart>
                   </ResponsiveContainer>
                 )}
               </div>
