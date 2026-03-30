@@ -23,6 +23,7 @@ import { Button } from "../../components/ui/button";
 import ExtensionDownloadBanner from "../../components/dashboard/ExtensionDownloadBanner";
 import ExtensionFarmCard from "../../components/dashboard/ExtensionFarmCard";
 import ReferralCard from "../../components/dashboard/ReferralCard";
+import SystemDailyChart from "../../components/dashboard/SystemDailyChart";
 import {
   Link2,
   Gauge,
@@ -1099,40 +1100,11 @@ function DashboardInner() {
                   <LineIcon className="h-4 w-4" /> System Daily (GLOBAL)
                 </h3>
                 <div className="text-xs text-slate-400">
-                  {sysDailyLabel}: {sysDailyLoading ? "-" : `${sysDailyTotal.toLocaleString()} pts (${sysDailySeries.length} buckets)`}
+                  {sysDailyLoading ? "Loading…" : `${sysDailyTotal.toLocaleString()} pts (${sysDailySeries.length} buckets)`}
                 </div>
               </div>
               <div className="w-full h-64 rounded-2xl border border-slate-800 bg-slate-950/40 p-2">
-                {sysDailyLoading ? (
-                  <div className="flex h-full items-center justify-center text-slate-500">Loading…</div>
-                ) : sysDailyError ? (
-                  <div className="text-rose-400 text-sm">{sysDailyError}</div>
-                ) : sysDailySeries.length === 0 ? (
-                  <div className="flex h-full items-center justify-center text-slate-500 text-sm">
-                    No daily data for this range.
-                  </div>
-                ) : (
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={sysDailySeries} margin={{ top: 8, right: 8, left: 0, bottom: 0 }} key={`sysdaily-${sysDailySeries.length}`}>
-                      <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                      <XAxis dataKey="label" tick={{ fontSize: 10 }} interval={0} />
-                      <YAxis allowDecimals={false} domain={[0, (dataMax: number) => dataMax * 1.2]} />
-                      <Tooltip
-                        cursor={{ fill: "rgba(148,163,184,0.2)" }}
-                        contentStyle={{
-                          backgroundColor: "rgba(15,23,42,0.96)",
-                          border: "1px solid rgba(148,163,184,0.5)",
-                          borderRadius: 12,
-                          padding: "8px 10px",
-                        }}
-                        labelStyle={{ color: "#e5e7eb", fontSize: 12 }}
-                        itemStyle={{ color: "#22c55e", fontSize: 12 }}
-                        formatter={(v: number) => [`${v.toLocaleString()} pts`, "System"]}
-                      />
-                      <Bar dataKey="points" fill="#22c55e" radius={[4, 4, 0, 0]} />
-                    </BarChart>
-                  </ResponsiveContainer>
-                )}
+                <SystemDailyChart range={range} />
               </div>
               <div className="mt-2 text-xs text-slate-500">Aurora range color: emerald → sky (global daily load).</div>
             </CardContent>
