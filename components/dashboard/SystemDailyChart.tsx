@@ -90,16 +90,13 @@ export default function SystemDailyChart({ range }: { range: string }) {
         <CartesianGrid strokeDasharray="3 3" vertical={false} />
         <XAxis
           dataKey="label"
-          tick={{ fontSize: 10 }}
+          tick={false}
           interval={0}
-          angle={-30}
-          textAnchor="end"
-          height={40}
         />
         <YAxis
           allowDecimals={false}
           domain={[0, Math.ceil(maxPoints * 1.2)]}
-          hide
+          tickFormatter={(v) => (v >= 1000 ? `${(v / 1000).toFixed(0)}k` : v)}
         />
         <Tooltip
           cursor={{ fill: "rgba(148,163,184,0.15)" }}
