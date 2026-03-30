@@ -26,9 +26,9 @@ function getCronKey(req: Request): string {
 
 function requireCronKey(req: Request) {
   const got = getCronKey(req);
-  const want = (process.env.CRON_KEY || "").trim();
+  const want = (process.env.CRON_SECRET || "").trim();
 
-  if (!want) return { ok: false as const, error: "Missing CRON_KEY in env" };
+  if (!want) return { ok: false as const, error: "Missing CRON_SECRET in env" };
   if (!got) {
     return {
       ok: false as const,
