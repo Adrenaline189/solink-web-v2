@@ -90,7 +90,7 @@ export async function rollupDay(dayInput?: Date): Promise<RollupDayResult> {
       where: {
         dayUtc_userId_unique: {
           dayUtc,
-          userId: "system",
+          userId: null,
         },
       },
       update: {
@@ -98,7 +98,7 @@ export async function rollupDay(dayInput?: Date): Promise<RollupDayResult> {
       },
       create: {
         dayUtc,
-        userId: "system",
+        userId: null,
         pointsEarned: totalPoints,
         uptimePct: null,
         avgBandwidth: null,

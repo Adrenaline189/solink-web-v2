@@ -83,13 +83,13 @@ export async function rollupHourPoints(hourInput?: Date): Promise<RollupHourResu
       where: {
         hourUtc_userId_unique: {
           hourUtc,
-          userId: "system",
+          userId: null,
         },
       },
       update: { pointsEarned: totalPoints },
       create: {
         hourUtc,
-        userId: "system",
+        userId: null,
         pointsEarned: totalPoints,
 
         uptimePct: null,
