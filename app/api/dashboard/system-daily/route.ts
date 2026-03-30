@@ -23,7 +23,6 @@ export async function GET(req: NextRequest) {
   try {
     const url = new URL(req.url);
     const range = getRange(url.searchParams.get("range"));
-    const tz = "UTC";
 
     const now = new Date();
     const day0 = floorUtcDay(now);
@@ -44,31 +43,50 @@ export async function GET(req: NextRequest) {
 
     const daysCount = Math.max(1, Math.round((endUtc.getTime() - startUtc.getTime()) / 86_400_000));
 
-    // Fetch all pointEvents in range and group by day in JS
-    const events = await prisma.pointEvent.findMany({
+    // 1) วันก่อนหน้า: ดึงจาก metricsDaily (rolled data)
+    const rolledRows = await prisma.metricsDaily.findMany({
       where: {
-        occurredAt: { gte: startUtc, lt: endUtc },
-        amount: { gt: 0 },
+        dayUtc: { gte: startUtc, lt: day0 },
+        userId: "system",
       },
-      select: { occurredAt: true, amount: true },
+      select: { dayUtc: true, pointsEarned: true },
     });
-
-    const dayMap = new Map<string, number>();
-    for (const ev of events) {
-      const key = floorUtcDay(new Date(ev.occurredAt)).toISOString().slice(0, 10);
-      dayMap.set(key, (dayMap.get(key) ?? 0) + ev.amount);
+    const rolledMap = new Map<string, number>();
+    for (const r of rolledRows) {
+      rolledMap.set(r.dayUtc.toISOString().slice(0, 10), Number(r.pointsEarned ?? 0));
     }
 
+    // 2) วันนี้ (ongoing): ดึงจาก pointEvents โดยตรง
+    const todayEvents = await prisma.pointEvent.findMany({
+      where: {
+        occurredAt: { gte: day0, lt: addDaysUtc(day0, 1) },
+        amount: { gt: 0 },
+      },
+      select: { amount: true },
+    });
+    const todayTotal = todayEvents.reduce((s, e) => s + Number(e.amount ?? 0), 0);
+
+    // 3) สร้าง buckets ครอบคลุมทุกวัน
     const buckets = Array.from({ length: daysCount }).map((_, i) => {
       const d = addDaysUtc(startUtc, i);
       const label = d.toISOString().slice(0, 10);
-      return { dayUtc: d.toISOString(), label, points: dayMap.get(label) ?? 0 };
+      const isToday = d.getTime() === day0.getTime();
+      const points = isToday ? todayTotal : (rolledMap.get(label) ?? 0);
+      return { dayUtc: d.toISOString(), label, points };
     });
 
-    const todayTotal = dayMap.get(day0.toISOString().slice(0, 10)) ?? 0;
+    const todayTotalFromMap = buckets.find(b => b.label === day0.toISOString().slice(0, 10))?.points ?? 0;
 
     return NextResponse.json(
-      { ok: true, range, tz, todayTotal, series: buckets, daily: buckets, days: buckets },
+      {
+        ok: true,
+        range,
+        tz: "UTC",
+        todayTotal: todayTotalFromMap,
+        series: buckets,
+        daily: buckets,
+        days: buckets,
+      },
       { status: 200, headers: { "Cache-Control": "no-store" } }
     );
   } catch (e: unknown) {
