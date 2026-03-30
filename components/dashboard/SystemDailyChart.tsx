@@ -60,8 +60,16 @@ export default function SystemDailyChart({ range }: { range: string }) {
 
   if (loading) {
     return (
-      <div className="flex h-full items-center justify-center text-slate-500 text-sm">
-        Loading…
+      <div className="w-full h-full flex flex-col gap-3 animate-pulse">
+        <div className="flex items-end gap-1 h-full px-2">
+          <div className="flex-1 bg-slate-800 rounded-t" style={{ height: "30%" }} />
+          <div className="flex-1 bg-slate-800 rounded-t" style={{ height: "55%" }} />
+          <div className="flex-1 bg-slate-800 rounded-t" style={{ height: "80%" }} />
+          <div className="flex-1 bg-slate-800 rounded-t" style={{ height: "45%" }} />
+          <div className="flex-1 bg-slate-800 rounded-t" style={{ height: "70%" }} />
+          <div className="flex-1 bg-slate-800 rounded-t" style={{ height: "60%" }} />
+          <div className="flex-1 bg-slate-800 rounded-t" style={{ height: "90%" }} />
+        </div>
       </div>
     );
   }
