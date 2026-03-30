@@ -67,10 +67,11 @@ export async function GET(req: NextRequest) {
     const todayTotal = todayEvents.reduce((s, e) => s + Number(e.amount ?? 0), 0);
 
     // 3) สร้าง buckets ครอบคลุมทุกวัน
+    const todayLabel = day0.toISOString().slice(0, 10);
     const buckets = Array.from({ length: daysCount }).map((_, i) => {
       const d = addDaysUtc(startUtc, i);
       const label = d.toISOString().slice(0, 10);
-      const isToday = d.getTime() === day0.getTime();
+      const isToday = label === todayLabel;
       const points = isToday ? todayTotal : (rolledMap.get(label) ?? 0);
       return { dayUtc: d.toISOString(), label, points };
     });
