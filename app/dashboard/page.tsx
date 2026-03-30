@@ -14,7 +14,7 @@ const WalletMultiButton = NextDynamic(
   { ssr: false }
 );
 
-import React, { Suspense, useEffect, useState, useCallback, useMemo } from "react";
+import React, { Suspense, useEffect, useState, useCallback, useMemo, useTransition, useDeferredValue } from "react";
 export const dynamic = "force-dynamic";
 
 import { formatBandwidth } from "@/lib/format";

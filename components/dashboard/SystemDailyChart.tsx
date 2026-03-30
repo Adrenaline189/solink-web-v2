@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useTransition, useDeferredValue } from "react";
 import {
   BarChart,
   Bar,
@@ -17,13 +17,16 @@ type ChartBucket = {
 };
 
 export default function SystemDailyChart({ range }: { range: string }) {
+  const [isPending, startTransition] = useTransition();
   const [buckets, setBuckets] = useState<ChartBucket[]>([]);
-  const [loading, setLoading] = useState(true);
   const [total, setTotal] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const [initialized, setInitialized] = useState(false);
+
+  // Keep showing old data while fetching new data (deferred)
+  const deferredRange = useDeferredValue(range);
 
   useEffect(() => {
-    setLoading(true);
     setError(null);
 
     fetch(`/api/dashboard/system-daily?range=${range}`, { credentials: "include" })
@@ -31,11 +34,9 @@ export default function SystemDailyChart({ range }: { range: string }) {
       .then((json) => {
         if (!json.ok) {
           setError("API error");
-          setLoading(false);
           return;
         }
 
-        // Use series array from API
         const series: ChartBucket[] = (json.series ?? json.days ?? json.daily ?? []).map(
           (b: any) => ({
             label: String(b.label ?? ""),
@@ -43,22 +44,23 @@ export default function SystemDailyChart({ range }: { range: string }) {
           })
         );
 
-        // Sort by label ASC (just in case)
         series.sort((a, b) => a.label.localeCompare(b.label));
-
         const totalPoints = json.todayTotal ?? series.reduce((s: number, x: ChartBucket) => s + x.points, 0);
 
-        setBuckets(series);
-        setTotal(totalPoints);
-        setLoading(false);
+        startTransition(() => {
+          setBuckets(series);
+          setTotal(totalPoints);
+          setInitialized(true);
+        });
       })
       .catch((e) => {
         setError(String(e?.message ?? "fetch failed"));
-        setLoading(false);
+        setInitialized(true);
       });
   }, [range]);
 
-  if (loading) {
+  // Show skeleton only on first load (before any data)
+  if (!initialized) {
     return (
       <div className="w-full h-full flex flex-col gap-3 animate-pulse">
         <div className="flex items-end gap-1 h-full px-2">
@@ -86,7 +88,6 @@ export default function SystemDailyChart({ range }: { range: string }) {
     );
   }
 
-  // Y-axis: use max data value, min 1 so we never get domain [0, 0]
   const maxPoints = Math.max(...buckets.map((b) => b.points), 1);
 
   return (
@@ -94,13 +95,10 @@ export default function SystemDailyChart({ range }: { range: string }) {
       <BarChart
         data={buckets}
         margin={{ top: 4, right: 4, left: 0, bottom: 0 }}
+        style={{ opacity: isPending ? 0.6 : 1, transition: "opacity 0.2s" }}
       >
         <CartesianGrid strokeDasharray="3 3" vertical={false} />
-        <XAxis
-          dataKey="label"
-          tick={false}
-          interval={0}
-        />
+        <XAxis dataKey="label" tick={false} interval={0} />
         <YAxis
           allowDecimals={false}
           domain={[0, Math.ceil(maxPoints * 1.2)]}
@@ -119,12 +117,7 @@ export default function SystemDailyChart({ range }: { range: string }) {
           formatter={(value: number) => [`${value.toLocaleString()} pts`, "System"]}
           labelFormatter={(label) => `Day: ${label}`}
         />
-        <Bar
-          dataKey="points"
-          fill="#22c55e"
-          radius={[3, 3, 0, 0]}
-          maxBarSize={40}
-        />
+        <Bar dataKey="points" fill="#22c55e" radius={[3, 3, 0, 0]} maxBarSize={40} />
       </BarChart>
     </ResponsiveContainer>
   );
