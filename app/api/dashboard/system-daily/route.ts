@@ -47,7 +47,7 @@ export async function GET(req: NextRequest) {
     const rolledRows = await prisma.metricsDaily.findMany({
       where: {
         dayUtc: { gte: startUtc, lt: day0 },
-        userId: "system",
+        userId: null,
       },
       select: { dayUtc: true, pointsEarned: true },
     });
