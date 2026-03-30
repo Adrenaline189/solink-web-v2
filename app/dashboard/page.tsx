@@ -962,7 +962,7 @@ function DashboardInner() {
             value={pointsTodayDisplay != null ? pointsTodayDisplay.toLocaleString() : "-"}
             sub={
               realtime?.ok
-                ? `live (UTC): ${(realtime.livePoints ?? 0).toLocaleString()}  rolled: ${(realtime.rolledPoints ?? 0).toLocaleString()}`
+                ? `today: ${(realtime.livePoints ?? 0).toLocaleString()}  |  yesterday: ${(realtime.rolledPoints ?? 0).toLocaleString()}`
                 : `from daily cap ${summary ? (2000).toLocaleString() : "-"}`
             }
             icon={<Award className="h-5 w-5" />}
