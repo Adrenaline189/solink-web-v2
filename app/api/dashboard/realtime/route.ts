@@ -50,8 +50,8 @@ export async function GET(req: NextRequest) {
     const rolledRaw = rolledRow?.pointsEarned ?? 0;
     const rolledPoints = Number.isFinite(rolledRaw) ? Math.max(0, rolledRaw) : 0;
 
-    // 3) livePoints = earned - rolled (clamp, กัน double-count)
-    const livePoints = Math.max(0, earnedToday - rolledPoints);
+    // 3) livePoints = today's fresh earnings (direct from PointEvent)
+    const livePoints = earnedToday;
 
     // 4) pointsToday = rolled (yesterday) + live (today)
     const pointsToday = rolledPoints + livePoints;
