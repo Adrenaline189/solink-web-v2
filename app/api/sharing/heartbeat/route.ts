@@ -155,11 +155,11 @@ export async function POST(req: NextRequest) {
     });
 
     // Referral bonus: give 3% ongoing to referrer (if user was referred)
-    if (!result.duplicate && awarded > 0) {
+    if (!result.duplicate && awarded > 0 && user.wallet) {
       const REFERRAL_BONUS_PCT = 0.03;
       const bonusAmount = Math.max(1, Math.floor(awarded * REFERRAL_BONUS_PCT));
 
-      // Find who referred this user - look for signup bonus event where this user's wallet is the referredUser
+      // Find who referred this user
       const referralEvent = await prisma.pointEvent.findFirst({
         where: {
           type: "referral_bonus",
