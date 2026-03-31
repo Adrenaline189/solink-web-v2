@@ -960,14 +960,14 @@ function DashboardInner() {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
           <KPI
             title="Points Today"
-            value={pointsTodayDisplay != null ? pointsTodayDisplay.toLocaleString() : "-"}
+            value={realtime?.ok ? (realtime.livePoints ?? 0).toLocaleString() : "-"}
             sub={
               realtime?.ok
-                ? `today: ${(realtime.livePoints ?? 0).toLocaleString()}  |  yesterday: ${(realtime.rolledPoints ?? 0).toLocaleString()}`
-                : `from daily cap ${summary ? (2000).toLocaleString() : "-"}`
+                ? `yesterday: ${(realtime.rolledPoints ?? 0).toLocaleString()}`
+                : "Loading..."
             }
             icon={<Award className="h-5 w-5" />}
-            loading={loading && pointsTodayDisplay == null}
+            loading={loading && !realtime?.ok}
           />
           <KPI
             title="Total Points"
