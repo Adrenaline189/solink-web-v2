@@ -158,7 +158,7 @@ export async function POST(req: NextRequest) {
     if (!result.duplicate && awarded > 0) {
       const referredBy = user.referredBy;
       if (referredBy) {
-        const REFERRAL_BONUS_PCT = 0.10;
+        const REFERRAL_BONUS_PCT = 0.03;
         const bonusAmount = Math.max(1, Math.floor(awarded * REFERRAL_BONUS_PCT));
         const referrer = await prisma.user.findFirst({
           where: { wallet: referredBy },
