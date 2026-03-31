@@ -272,6 +272,28 @@ function DashboardInner() {
         });
         if (!res.ok) {
           console.error("auth/login failed:", await res.text());
+          return;
+        }
+
+        // 🎁 Referral bonus: ถ้ามี ?ref= ใน URL ให้ bonus 100pts ต่อ referrer
+        const refCode = new URLSearchParams(window.location.search).get("ref");
+        if (refCode) {
+          try {
+            const bonusRes = await fetch("/api/referral/bonus", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ referralCode: refCode }),
+              credentials: "include",
+            });
+            const bonusJson = await bonusRes.json();
+            if (bonusJson.ok) {
+              console.log("Referral bonus awarded:", bonusJson.bonus, "pts to referrer");
+              // Refresh realtime data to show new balance
+              if (typeof refreshRealtime === "function") refreshRealtime();
+            }
+          } catch (e) {
+            console.error("referral bonus error:", e);
+          }
         }
       } catch (e) {
         console.error("auth/login error:", e);
