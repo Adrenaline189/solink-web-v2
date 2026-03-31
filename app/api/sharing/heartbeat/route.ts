@@ -154,6 +154,51 @@ export async function POST(req: NextRequest) {
       return { duplicate: false, eventId: ev.id, credited: awarded, balance: bal };
     });
 
+    // Referral bonus: give 3% ongoing to referrer (if user was referred)
+    if (!result.duplicate && awarded > 0) {
+      const REFERRAL_BONUS_PCT = 0.03;
+      const bonusAmount = Math.max(1, Math.floor(awarded * REFERRAL_BONUS_PCT));
+
+      // Find who referred this user - look for signup bonus event where this user's wallet is the referredUser
+      const referralEvent = await prisma.pointEvent.findFirst({
+        where: {
+          type: "referral_bonus",
+          meta: { path: ["referredUser"], equals: user.wallet },
+        },
+        select: { userId: true },
+      });
+
+      if (referralEvent) {
+        const referrerUserId = referralEvent.userId;
+        prisma.$transaction(async (tx) => {
+          const dedupeKey = `referral:ongoing:${referrerUserId}:${user.id}:${minuteBucket.toISOString()}`;
+          const exists = await tx.pointEvent.findUnique({ where: { dedupeKey }, select: { id: true } });
+          if (exists) return;
+          await tx.pointEvent.create({
+            data: {
+              userId: referrerUserId,
+              nodeId: null,
+              type: "referral_bonus",
+              amount: bonusAmount,
+              meta: { source: "referral/ongoing", referredUser: user.wallet, originalAmount: awarded, bonusPct: REFERRAL_BONUS_PCT, ruleVersion: "v1" },
+              source: "referral",
+              ruleVersion: "v1",
+              dedupeKey,
+              nonce: crypto.randomUUID(),
+              signatureOk: true,
+              riskScore: 0,
+              occurredAt: minuteBucket,
+            },
+          });
+          await tx.pointBalance.upsert({
+            where: { userId: referrerUserId },
+            update: { balance: { increment: bonusAmount } },
+            create: { userId: referrerUserId, balance: bonusAmount, slk: 0 },
+          });
+        }).catch((e) => console.error("[referral bonus]", e));
+      }
+    }
+
     return NextResponse.json({
       ok: true, active: true, awarded: result.credited,
       reason: result.duplicate ? "duplicate" : undefined,
