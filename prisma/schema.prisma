@@ -28,12 +28,6 @@ model User {
   wallet        String?  @unique
   createdAt     DateTime @default(now())
 
-  // Referral system
-  referralCode  String?  @unique
-  referredBy    String?   // wallet of referrer
-  referredByUser User?    @relation("Referrals", fields: [referredBy], references: [wallet])
-  referrals     User[]    @relation("Referrals")
-
   pointBalance  PointBalance?
   events        PointEvent[]
   nodes         Node[]

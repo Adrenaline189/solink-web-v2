@@ -81,7 +81,7 @@ export async function POST(req: NextRequest) {
     if (!userWallet) {
       return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
     }
-    const user = await prisma.user.findFirst({ where: { wallet: userWallet }, select: { id: true, wallet: true, referredBy: true } });
+    const user = await prisma.user.findFirst({ where: { wallet: userWallet }, select: { id: true, wallet: true } });
     if (!user) {
       return NextResponse.json({ ok: false, error: "User not found" }, { status: 404 });
     }
@@ -153,48 +153,6 @@ export async function POST(req: NextRequest) {
 
       return { duplicate: false, eventId: ev.id, credited: awarded, balance: bal };
     });
-
-    // Referral bonus: give 10% to referrer (if user was referred)
-    if (!result.duplicate && awarded > 0) {
-      const referredBy = user.referredBy;
-      if (referredBy) {
-        const REFERRAL_BONUS_PCT = 0.03;
-        const bonusAmount = Math.max(1, Math.floor(awarded * REFERRAL_BONUS_PCT));
-        const referrer = await prisma.user.findFirst({
-          where: { wallet: referredBy },
-          select: { id: true },
-        });
-        if (referrer) {
-          // Async: don't block the response
-          prisma.$transaction(async (tx) => {
-            const dedupeKey = `referral:ongoing:${referrer.id}:${user.id}:${minuteBucket.toISOString()}`;
-            const exists = await tx.pointEvent.findUnique({ where: { dedupeKey }, select: { id: true } });
-            if (exists) return;
-            await tx.pointEvent.create({
-              data: {
-                userId: referrer.id,
-                nodeId: null,
-                type: "referral_bonus",
-                amount: bonusAmount,
-                meta: { source: "referral/ongoing", referredUser: user.wallet, originalAmount: awarded, bonusPct: REFERRAL_BONUS_PCT, ruleVersion: "v1" },
-                source: "referral",
-                ruleVersion: "v1",
-                dedupeKey,
-                nonce: crypto.randomUUID(),
-                signatureOk: true,
-                riskScore: 0,
-                occurredAt: minuteBucket,
-              },
-            });
-            await tx.pointBalance.upsert({
-              where: { userId: referrer.id },
-              update: { balance: { increment: bonusAmount } },
-              create: { userId: referrer.id, balance: bonusAmount, slk: 0 },
-            });
-          }).catch((e) => console.error("[referral bonus]", e));
-        }
-      }
-    }
 
     return NextResponse.json({
       ok: true, active: true, awarded: result.credited,
