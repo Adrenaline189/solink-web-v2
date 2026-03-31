@@ -151,7 +151,7 @@ function DashboardInner() {
 
   // ✅ Realtime (Points Today - UTC day)
   const [realtime, setRealtime] = useState<DashboardRealtime | null>(null);
-  const REALTIME_REFRESH_MS = 5_000;
+  const REALTIME_REFRESH_MS = 15_000;
 
   const [range, setRange] = useState<DashboardRange>("today");
   const { prefs } = usePrefs();
@@ -203,7 +203,7 @@ function DashboardInner() {
   const [pingVersion, setPingVersion] = useState<string | null>(null);
 
   // refetch interval (ms) สำหรับ metrics ระบบ
-  const SYS_REFRESH_MS = 30_000;
+  const SYS_REFRESH_MS = 60_000;
 
   // ---- Convert SLK module state ----
   const [convertPts, setConvertPts] = useState<string>("");
