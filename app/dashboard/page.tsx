@@ -951,10 +951,7 @@ function DashboardInner() {
         {/* Extension Download Banner */}
         <ExtensionDownloadBanner />
 
-        {/* Extension Farm Card */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
-          <ExtensionFarmCard />
-        </div>
+        {/* Extension Farm Card removed */}
 
         {/* KPI Cards */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
