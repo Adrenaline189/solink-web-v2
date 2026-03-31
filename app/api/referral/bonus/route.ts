@@ -18,17 +18,17 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, error: "Missing referralCode" }, { status: 400 });
     }
 
-    // Look up the referral code to find the referrer
-    const codeRow = await prisma.$queryRawUnsafe<Array<{ userId: string; code: string }>>(
-      `SELECT "userId", "code" FROM "ReferralCode" WHERE "code" = $1 LIMIT 1`,
+    // Look up referral code = first 8 chars of wallet address
+    const referrerWallet = await prisma.$queryRawUnsafe<Array<{ id: string; wallet: string }>>(
+      `SELECT id, wallet FROM "User" WHERE UPPER(LEFT(wallet, 8)) = UPPER($1) LIMIT 1`,
       [referralCode]
     );
 
-    if (!codeRow || codeRow.length === 0) {
+    if (!referrerWallet || referrerWallet.length === 0) {
       return NextResponse.json({ ok: false, error: "Invalid referral code" }, { status: 400 });
     }
 
-    const referrerUserId = codeRow[0].userId;
+    const referrerUserId = referrerWallet[0].id;
     const newUser = await prisma.user.findFirst({
       where: { wallet: ctx.wallet },
       select: { id: true },
