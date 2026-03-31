@@ -101,6 +101,23 @@ export async function POST(req: NextRequest) {
 
     const now = new Date();
 
+    // Anti-cheat: check recent events count for this user (max 60/hour = 1/min)
+    const hourStart = floorToHourUTC(now);
+    const recentCount = await prisma.pointEvent.count({
+      where: {
+        userId: user.id,
+        type: "UPTIME_MINUTE",
+        occurredAt: { gte: hourStart },
+      },
+    });
+    if (recentCount >= 60) {
+      return NextResponse.json({
+        ok: false,
+        error: "Rate limit exceeded. Max 60 requests/hour.",
+        code: "RATE_LIMIT",
+      }, { status: 429 });
+    }
+
     // Write bandwidth to MetricsHourly on every heartbeat
     await upsertHourlyBandwidthSample({ userId: user.id, now, bandwidthSampleMbps, region, version });
 
