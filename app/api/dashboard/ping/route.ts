@@ -78,7 +78,7 @@ export async function GET(req: NextRequest) {
       select: { version: true, region: true },
     });
 
-    const region = nodeAny?.region ?? mh?.region ?? null;
+    const region = nodeAny?.region ?? mh?.region ?? (getClientIp(req) ? "Browser" : null);
     const version = mh?.version ?? null;
 
     // latency series จาก PointEvent.meta.latencyMs (ล่าสุด ~60 จุด)
