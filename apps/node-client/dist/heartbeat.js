@@ -43,7 +43,7 @@ export async function sendHeartbeat(bandwidth) {
         };
     }
     catch (e) {
-        const msg = e instanceof Error ? e.message : String(e);
+        const msg = e instanceof Error ? e.message : String(e); // @ts-ignore
         return {
             ok: false,
             awarded: 0,
