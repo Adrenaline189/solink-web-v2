@@ -1,6 +1,4 @@
 import type { Metadata } from "next";
-import Nav from "../components/Nav";
-import Footer from "../components/Footer";
 
 export const metadata: Metadata = {
   title: "Help Center - Solink",
@@ -10,7 +8,18 @@ export const metadata: Metadata = {
 export default function HelpPage() {
   return (
     <div className="min-h-screen bg-[#0a0e17] text-slate-200">
-      <Nav />
+      {/* Simple Header */}
+      <header className="border-b border-slate-800">
+        <div className="max-w-5xl mx-auto px-6 py-4 flex items-center justify-between">
+          <a href="/" className="text-xl font-bold text-emerald-400">Solink</a>
+          <nav className="flex gap-6 text-sm">
+            <a href="/" className="text-slate-400 hover:text-white">Home</a>
+            <a href="/dashboard" className="text-slate-400 hover:text-white">Dashboard</a>
+            <a href="/download" className="text-slate-400 hover:text-white">Download</a>
+          </nav>
+        </div>
+      </header>
+
       <main className="max-w-3xl mx-auto px-6 py-16">
         <h1 className="text-4xl font-bold text-emerald-400 mb-8">Help Center</h1>
 
@@ -147,7 +156,7 @@ SOLINK_API_URL=https://solink.network`}</pre>
             <div className="bg-slate-900/50 rounded-xl p-5 border border-slate-800">
               <h3 className="text-lg font-semibold text-white mb-2">System Status</h3>
               <ul className="text-sm text-slate-300 space-y-1">
-                <li><span className="text-emerald-400">Region</span> — Server region you&apos;re connected to</li>
+                <li><span className="text-emerald-400">Region</span> — Server region you are connected to</li>
                 <li><span className="text-emerald-400">Latency</span> — Connection delay (ms)</li>
                 <li><span className="text-emerald-400">Version</span> — Node/Extension version</li>
               </ul>
@@ -182,7 +191,13 @@ SOLINK_API_URL=https://solink.network`}</pre>
           <p className="text-slate-500 text-sm mt-2">Email: support@solink.network</p>
         </section>
       </main>
-      <Footer />
+
+      {/* Simple Footer */}
+      <footer className="border-t border-slate-800 py-6">
+        <div className="max-w-5xl mx-auto px-6 text-center text-sm text-slate-500">
+          © 2026 Solink. All rights reserved.
+        </div>
+      </footer>
     </div>
   );
 }
