@@ -118,6 +118,23 @@ export async function POST(req: NextRequest) {
       }, { status: 429 });
     }
 
+    // Daily cap: max 8 hours = 480 minutes per day
+    const dayStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 0, 0, 0, 0));
+    const dailyCount = await prisma.pointEvent.count({
+      where: {
+        userId: user.id,
+        type: "UPTIME_MINUTE",
+        occurredAt: { gte: dayStart },
+      },
+    });
+    if (dailyCount >= 480) {
+      return NextResponse.json({
+        ok: false,
+        error: "Daily cap reached. Max 8 hours/day.",
+        code: "DAILY_CAP",
+      }, { status: 429 });
+    }
+
     // Write bandwidth to MetricsHourly on every heartbeat
     await upsertHourlyBandwidthSample({ userId: user.id, now, bandwidthSampleMbps, region, version });
 
