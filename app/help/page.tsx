@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
-import Nav from "@/components/layout/Nav";
-import Footer from "@/components/layout/Footer";
+import Nav from "../components/Nav";
+import Footer from "../components/Footer";
 
 export const metadata: Metadata = {
   title: "Help Center - Solink",
